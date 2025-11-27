@@ -1511,7 +1511,7 @@ def display_debug_tab(results, stats):
     with col2:
         st.metric("Pandas Version", pd.__version__)
     with col3:
-        st.metric("Analysis Time", f"{stats.get('analysis_duration_seconds', 0):.1f}s" if stats else "N/A")
+        st.metric("Analysis Time", f"{stats.get('analysis_timestamp', 0):.1f}s" if stats else "N/A")
         
 # Main execution
 if __name__ == "__main__":
@@ -1530,5 +1530,6 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
