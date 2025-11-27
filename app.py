@@ -593,7 +593,7 @@ def display_professional_overview_tab(results, stats):
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        # Issue Type Distribution dengan error handling
+        # Inquiry Type Distribution dengan error handling
         if 'issue_type_distribution' in stats:
             total_issues = sum(stats['issue_type_distribution'].values())
             normal_pct = (stats['issue_type_distribution'].get('normal', 0) / total_issues * 100) if total_issues > 0 else 0
@@ -630,7 +630,7 @@ def display_professional_overview_tab(results, stats):
     col1, col2 = st.columns(2)
     
     with col1:
-        # Issue Type Distribution Pie Chart
+        # Inquiry Type Distribution Pie Chart
         if 'issue_type_distribution' in stats and stats['issue_type_distribution']:
             issue_types = list(stats['issue_type_distribution'].keys())
             counts = list(stats['issue_type_distribution'].values())
@@ -735,7 +735,7 @@ def display_professional_overview_tab(results, stats):
             st.metric("Customer Leave Cases", 0)
 
 def display_enhanced_lead_time_tab(results, stats):
-    """Display enhanced lead time analysis - SEMUA ISSUE TYPE DISATUKAN"""
+    """Display enhanced lead time analysis - SEMUA Inquiry Type DISATUKAN"""
     st.markdown("## ⏱️ Lead Time Analysis")
     
     successful = [r for r in results if r['status'] == 'success']
@@ -761,7 +761,7 @@ def display_enhanced_lead_time_tab(results, stats):
     with col4:
         st.metric("Final Reply Samples", lead_time_stats['final_samples'])
 
-    # 2. BREAKDOWN PER ISSUE TYPE (SEMUA DISATUKAN)
+    # 2. BREAKDOWN PER Inquiry Type (SEMUA DISATUKAN)
     st.markdown("### 📈 Lead Time Breakdown by Inquiry Type")
     
     lead_time_by_type = {}
@@ -829,7 +829,7 @@ def display_enhanced_lead_time_tab(results, stats):
             final_avg = 'N/A'
         
         breakdown_data.append({
-            'Issue Type': issue_type.upper(),
+            'Inquiry Type': issue_type.upper(),
             'First Reply Avg': first_avg,
             'Final Reply Avg': final_avg,
             'First Reply Samples': len(data['first_lead_times']),
@@ -854,7 +854,7 @@ def display_enhanced_lead_time_tab(results, stats):
                 first_lt_float = float(first_lt)
                 if first_lt_float > 0:
                     first_reply_data.append({
-                        'Issue Type': result['final_issue_type'].upper(),
+                        'Inquiry Type': result['final_issue_type'].upper(),
                         'Lead Time (minutes)': first_lt_float,
                         'Lead Time (hours)': first_lt_float / 60,
                         'Formatted Lead Time': format_lead_time(first_lt_float)
@@ -871,10 +871,10 @@ def display_enhanced_lead_time_tab(results, stats):
             # Box plot first reply
             fig_first_box = px.box(
                 df_first, 
-                x='Issue Type', 
+                x='Inquiry Type', 
                 y='Lead Time (minutes)',
                 title='First Reply Lead Time Distribution (Minutes)',
-                color='Issue Type',
+                color='Inquiry Type',
                 color_discrete_map={
                     'NORMAL': '#2E86AB',
                     'SERIOUS': '#A23B72',
@@ -887,11 +887,11 @@ def display_enhanced_lead_time_tab(results, stats):
             # Statistics untuk first reply
             st.markdown("#### 📈 First Reply Statistics")
             first_stats_data = []
-            for issue_type in df_first['Issue Type'].unique():
-                issue_data = df_first[df_first['Issue Type'] == issue_type]['Lead Time (minutes)']
+            for issue_type in df_first['Inquiry Type'].unique():
+                issue_data = df_first[df_first['Inquiry Type'] == issue_type]['Lead Time (minutes)']
                 if len(issue_data) > 0:
                     first_stats_data.append({
-                        'Issue Type': issue_type,
+                        'Inquiry Type': issue_type,
                         'Count': len(issue_data),
                         'Average': format_lead_time(np.mean(issue_data)),
                         'Median': format_lead_time(np.median(issue_data)),
@@ -933,7 +933,7 @@ def display_enhanced_lead_time_tab(results, stats):
         
         if final_lt_minutes is not None and final_lt_minutes > 0:
             final_reply_data.append({
-                'Issue Type': result['final_issue_type'].upper(),
+                'Inquiry Type': result['final_issue_type'].upper(),
                 'Lead Time (minutes)': final_lt_minutes,
                 'Lead Time (hours)': final_lt_minutes / 60,
                 'Lead Time (days)': final_lt_minutes / 1440,
@@ -960,10 +960,10 @@ def display_enhanced_lead_time_tab(results, stats):
             
             fig_final_box = px.box(
                 df_final, 
-                x='Issue Type', 
+                x='Inquiry Type', 
                 y=y_column,
                 title=f'Final Reply Lead Time Distribution ({title_suffix})',
-                color='Issue Type',
+                color='Inquiry Type',
                 color_discrete_map={
                     'NORMAL': '#2E86AB',
                     'SERIOUS': '#A23B72',
@@ -977,11 +977,11 @@ def display_enhanced_lead_time_tab(results, stats):
             # Statistics untuk final reply dengan format fleksibel
             st.markdown("#### 📈 Final Reply Statistics")
             final_stats_data = []
-            for issue_type in df_final['Issue Type'].unique():
-                issue_data = df_final[df_final['Issue Type'] == issue_type]['Lead Time (minutes)']
+            for issue_type in df_final['Inquiry Type'].unique():
+                issue_data = df_final[df_final['Inquiry Type'] == issue_type]['Lead Time (minutes)']
                 if len(issue_data) > 0:
                     final_stats_data.append({
-                        'Issue Type': issue_type,
+                        'Inquiry Type': issue_type,
                         'Count': len(issue_data),
                         'Average': format_lead_time(np.mean(issue_data)),
                         'Median': format_lead_time(np.median(issue_data)),
@@ -999,15 +999,15 @@ def display_enhanced_lead_time_tab(results, stats):
         if total_final_cases > 0:
             st.write(f"**Total final reply cases analyzed:** {total_final_cases}")
             
-            # Cari issue type dengan lead time terpanjang
+            # Cari Inquiry Type dengan lead time terpanjang
             max_lead_time_idx = df_final['Lead Time (minutes)'].idxmax()
             max_case = df_final.loc[max_lead_time_idx]
-            st.write(f"**Longest resolution:** {max_case['Issue Type']} case - {max_case['Formatted Lead Time']}")
+            st.write(f"**Longest resolution:** {max_case['Inquiry Type']} case - {max_case['Formatted Lead Time']}")
             
-            # Cari issue type dengan lead time terpendek
+            # Cari Inquiry Type dengan lead time terpendek
             min_lead_time_idx = df_final['Lead Time (minutes)'].idxmin()
             min_case = df_final.loc[min_lead_time_idx]
-            st.write(f"**Fastest resolution:** {min_case['Issue Type']} case - {min_case['Formatted Lead Time']}")
+            st.write(f"**Fastest resolution:** {min_case['Inquiry Type']} case - {min_case['Formatted Lead Time']}")
             
             # Rata-rata overall
             overall_avg = format_lead_time(df_final['Lead Time (minutes)'].mean())
@@ -1015,7 +1015,7 @@ def display_enhanced_lead_time_tab(results, stats):
     else:
         st.info("No final reply lead time data available")
 
-    # 5. COMPARISON CHART (SEMUA ISSUE TYPE)
+    # 5. COMPARISON CHART (SEMUA Inquiry Type)
     st.markdown("### 📊 Lead Time Comparison - All Inquiry Types")
     
     # Prepare data untuk comparison chart
@@ -1025,7 +1025,7 @@ def display_enhanced_lead_time_tab(results, stats):
             try:
                 first_avg = np.mean(data['first_lead_times'])
                 comparison_data.append({
-                    'Issue Type': issue_type.upper(),
+                    'Inquiry Type': issue_type.upper(),
                     'Reply Type': 'First Reply',
                     'Average Lead Time (minutes)': first_avg,
                     'Formatted Time': format_lead_time(first_avg)
@@ -1037,7 +1037,7 @@ def display_enhanced_lead_time_tab(results, stats):
             try:
                 final_avg = np.mean(data['final_lead_times_minutes'])
                 comparison_data.append({
-                    'Issue Type': issue_type.upper(),
+                    'Inquiry Type': issue_type.upper(),
                     'Reply Type': 'Final Reply',
                     'Average Lead Time (minutes)': final_avg,
                     'Formatted Time': format_lead_time(final_avg)
@@ -1085,13 +1085,13 @@ def display_enhanced_lead_time_tab(results, stats):
         st.info("No data available for comparison chart")
                     
 def display_issue_types_tab(results, stats):
-    """Display issue types analysis"""
+    """Display Inquiry Types analysis"""
     st.markdown("## 🎯 Inquiry Types Analysis")
     
     successful = [r for r in results if r['status'] == 'success']
     
     if successful:
-        # Summary by issue type
+        # Summary by Inquiry Type
         st.markdown("### 📊 Summary by Inquiry Type")
         
         issue_summary = {}
@@ -1120,7 +1120,7 @@ def display_issue_types_tab(results, stats):
             final_reply_rate = (data['final_reply_found'] / data['count']) * 100
             
             summary_data.append({
-                'Issue Type': issue_type.upper(),
+                'Inquiry Type': issue_type.upper(),
                 'Count': data['count'],
                 'Avg Quality Score': f"{avg_quality:.1f}",
                 'First Reply Rate': f"{first_reply_rate:.1f}%",
@@ -1143,7 +1143,7 @@ def display_issue_types_tab(results, stats):
             
             display_data.append({
                 'Ticket ID': result['ticket_id'],
-                'Issue Type': result['final_issue_type'].upper(),
+                'Inquiry Type': result['final_issue_type'].upper(),
                 'Main Question': result['main_question'][:80] + '...',
                 'First Reply': '✅' if result['first_reply_found'] else '❌',
                 'Final Reply': '✅' if result['final_reply_found'] else '❌',
@@ -1176,7 +1176,7 @@ def display_enhanced_ticket_details(result):
     st.markdown("### 📝 Main Question")
     st.markdown(f'<div class="message-box"><strong>Question:</strong> {result["main_question"]}</div>', unsafe_allow_html=True)
     
-    # Issue Type dengan color coding
+    # Inquiry Type dengan color coding
     issue_type = result['final_issue_type']
     issue_color = {
         'normal': '#28a745',
@@ -1315,7 +1315,7 @@ def display_performance_tab(results, stats):
     successful = [r for r in results if r['status'] == 'success']
     
     if successful:
-        # Performance by Issue Type
+        # Performance by Inquiry Type
         perf_data = []
         for result in successful:
             perf_data.append({
@@ -1329,7 +1329,7 @@ def display_performance_tab(results, stats):
         col1, col2 = st.columns(2)
         
         with col1:
-            # Performance by Issue Type
+            # Performance by Inquiry Type
             perf_pivot = pd.crosstab(
                 df_perf['issue_type'], 
                 df_perf['performance']
@@ -1341,7 +1341,7 @@ def display_performance_tab(results, stats):
                     x='issue_type',
                     y=perf_pivot.columns[1:].tolist(),
                     title='Performance Rating by Inquiry Type',
-                    labels={'value': 'Count', 'issue_type': 'Issue Type'},
+                    labels={'value': 'Count', 'issue_type': 'Inquiry Type'},
                     barmode='stack'
                 )
                 st.plotly_chart(fig_stacked, use_container_width=True)
@@ -1540,6 +1540,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
