@@ -701,10 +701,10 @@ def display_professional_overview_tab(results, stats):
         st.metric("Final Reply Avg", display_final)
     
     with col3:
-        st.metric("First Reply Samples", lead_time_stats['first_samples'])
+        st.metric("Count of First Reply", lead_time_stats['first_samples'])
     
     with col4:
-        st.metric("Final Reply Samples", lead_time_stats['final_samples'])
+        st.metric("Count of Final Reply", lead_time_stats['final_samples'])
     
     # ROW 4: Reply Effectiveness dengan ERROR HANDLING
     st.markdown("### 💬 Reply Effectiveness")
@@ -755,10 +755,10 @@ def display_enhanced_lead_time_tab(results, stats):
         st.metric("Final Reply Average", format_lead_time(final_avg))
     
     with col3:
-        st.metric("First Reply Samples", lead_time_stats['first_samples'])
+        st.metric("Count of First Reply", lead_time_stats['first_samples'])
     
     with col4:
-        st.metric("Final Reply Samples", lead_time_stats['final_samples'])
+        st.metric("Count of Final Reply", lead_time_stats['final_samples'])
 
     # 2. BREAKDOWN PER Inquiry Type (SEMUA DISATUKAN)
     st.markdown("### 📈 Lead Time Breakdown by Inquiry Type")
@@ -831,8 +831,8 @@ def display_enhanced_lead_time_tab(results, stats):
             'Inquiry Type': issue_type.upper(),
             'First Reply Avg': first_avg,
             'Final Reply Avg': final_avg,
-            'First Reply Samples': len(data['first_lead_times']),
-            'Final Reply Samples': len(data['final_lead_times_minutes'])
+            'Count of First Reply': len(data['first_lead_times']),
+            'Count of Final Reply': len(data['final_lead_times_minutes'])
         })
     
     if breakdown_data:
@@ -1538,6 +1538,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
