@@ -870,7 +870,7 @@ class MainIssueDetector:
     def __init__(self):
         # 1. Keywords Masalah
         self.problem_keywords = [
-            'saya ingin menanyakan', 'stok', 'mobil saya mogok', 'apa bisa', 'masalah', 'problem', 'error', 'gagal', 'tidak bisa', 
+            'bagaimana', 'mobil saya', 'saya belum dapat', 'saya ingin menanyakan', 'stok', 'mobil saya mogok', 'apa bisa', 'masalah', 'problem', 'error', 'gagal', 'tidak bisa', 
             'kendala', 'gangguan', 'trouble', 'komplain', 'keluhan', 'kecewa',
             'rusak', 'blank', 'kosong', 'hang', 'lambat', 'eror', 'bug', 'bantu'
         ]
