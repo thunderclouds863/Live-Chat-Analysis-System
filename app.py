@@ -1340,8 +1340,8 @@ def display_performance_tab(results, stats):
                     perf_pivot, 
                     x='issue_type',
                     y=perf_pivot.columns[1:].tolist(),
-                    title='Performance Rating by Issue Type',
-                    labels={'value': 'Count', 'issue_type': 'Inquiry Type'},
+                    title='Performance Rating by Inquiry Type',
+                    labels={'value': 'Count', 'issue_type': 'Issue Type'},
                     barmode='stack'
                 )
                 st.plotly_chart(fig_stacked, use_container_width=True)
@@ -1540,6 +1540,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
