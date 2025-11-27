@@ -1142,6 +1142,18 @@ class ReplyAnalyzer:
         self.complaint_tickets = complaint_tickets or {}
         self.action_keywords = config.ACTION_KEYWORDS
         
+        # Extended solution keywords untuk menangkap lebih banyak pattern
+        self.solution_keywords_extended = config.SOLUTION_KEYWORDS + [
+            'bisa menghubungi', 'silakan menghubungi', 'dapat menghubungi', 'hubungi',
+            'nomor', 'telepon', 'tlp', 'call', 'contact', 'kontak',
+            'alamat', 'lokasi', 'datang ke', 'kunjungi',
+            'website', 'situs', 'online', 'aplikasi',
+            'bisa dilihat', 'silakan dilihat', 'dapat dilihat',
+            'info', 'informasi', 'detail', 'rincian',
+            'proses', 'cara', 'langkah', 'tahap',
+            'dijawab', 'diberikan', 'diberitahu', 'dijelaskan'
+        ]
+        
         # Pola System Log yang HARUS diskip
         self.system_patterns = [
             r"reassigned to",
@@ -1477,11 +1489,14 @@ class ReplyAnalyzer:
         return None
 
     def _analyze_normal_replies(self, ticket_df, qa_pairs, main_issue):
-        """Analyze replies untuk normal tickets"""
-        final_reply = self._find_solution_reply(ticket_df, main_issue['question_time'])
+        """Analyze replies untuk normal tickets - DIPERBAIKI dengan logic yang lebih baik"""
+        print("   📋 Analyzing NORMAL replies...")
+        
+        # PERBAIKAN: Gunakan method yang lebih baik untuk mencari final reply
+        final_reply = self._find_enhanced_solution_reply(ticket_df, main_issue['question_time'])
         
         final_reply_found = final_reply is not None
-        first_reply_found = False
+        first_reply_found = False  # Untuk normal ticket, tidak ada first reply requirement
         
         customer_leave = self._check_enhanced_customer_leave(
             ticket_df, first_reply_found, final_reply_found, main_issue['question_time']
@@ -1496,7 +1511,100 @@ class ReplyAnalyzer:
         }
         
         print(f"   📊 Normal analysis: Final={final_reply_found}, Leave={customer_leave}")
+        
+        # DEBUG: Print jika tidak ditemukan final reply
+        if not final_reply_found:
+            print("   🔍 DEBUG: No final reply found. Checking operator messages...")
+            operator_messages = ticket_df[
+                (ticket_df['parsed_timestamp'] > main_issue['question_time']) &
+                (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
+            ].sort_values('parsed_timestamp')
+            
+            if not operator_messages.empty:
+                print(f"   🔍 DEBUG: Found {len(operator_messages)} operator messages after question")
+                for idx, msg in operator_messages.iterrows():
+                    print(f"   🔍 DEBUG Operator msg: {msg['Message'][:100]}...")
+                    print(f"   🔍 DEBUG Contains solution: {self._contains_solution_keyword_extended(msg['Message'])}")
+                    print(f"   🔍 DEBUG Is closing pattern: {any(c in msg['Message'].lower() for c in config.CLOSING_PATTERNS)}")
+        
         return analysis_result
+
+    def _find_enhanced_solution_reply(self, ticket_df, question_time):
+        """Enhanced method untuk mencari solution reply - LEBIH FLEKSIBEL"""
+        operator_messages = ticket_df[
+            (ticket_df['parsed_timestamp'] > question_time) &
+            (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
+        ].sort_values('parsed_timestamp')
+        
+        # PERBAIKAN: Gunakan .empty untuk cek DataFrame
+        if operator_messages.empty:
+            return None
+        
+        # Cari semua kandidat balasan yang meaningful
+        solution_candidates = []
+        
+        for _, msg in operator_messages.iterrows():
+            message_text = str(msg['Message'])
+            message_lower = message_text.lower()
+            
+            # Skip system messages
+            if self._is_system_message(message_text):
+                continue
+                
+            # Skip closing/greeting patterns
+            if any(c in message_lower for c in config.CLOSING_PATTERNS):
+                continue
+                
+            # Skip jika hanya greeting singkat
+            if self._is_weak_greeting(message_text):
+                continue
+            
+            # PERBAIKAN: Gunakan extended solution keywords
+            has_solution = self._contains_solution_keyword_extended(message_text)
+            is_long_enough = len(message_text.split()) >= 5  # Minimal 5 kata
+            has_useful_info = len(message_text.strip()) >= 20  # Minimal 20 karakter
+            
+            # Jika memenuhi kriteria, tambahkan sebagai kandidat
+            if has_solution and is_long_enough and has_useful_info:
+                lt = (msg['parsed_timestamp'] - question_time).total_seconds()
+                solution_candidates.append({
+                    'message': message_text,
+                    'timestamp': msg['parsed_timestamp'],
+                    'lead_time_seconds': lt,
+                    'lead_time_minutes': round(lt/60, 2),
+                    'lead_time_hhmmss': self._seconds_to_hhmmss(lt),
+                    'note': 'Enhanced solution detection'
+                })
+        
+        # Ambil balasan pertama yang memenuhi kriteria
+        if solution_candidates:
+            return solution_candidates[0]
+        
+        # Fallback: Ambil balasan operator pertama yang meaningful
+        for _, msg in operator_messages.iterrows():
+            message_text = str(msg['Message'])
+            
+            if (not self._is_system_message(message_text) and 
+                not any(c in message_text.lower() for c in config.CLOSING_PATTERNS) and
+                not self._is_weak_greeting(message_text) and
+                len(message_text.strip()) >= 15):
+                
+                lt = (msg['parsed_timestamp'] - question_time).total_seconds()
+                return {
+                    'message': message_text,
+                    'timestamp': msg['parsed_timestamp'],
+                    'lead_time_seconds': lt,
+                    'lead_time_minutes': round(lt/60, 2),
+                    'lead_time_hhmmss': self._seconds_to_hhmmss(lt),
+                    'note': 'Fallback: First meaningful operator reply'
+                }
+        
+        return None
+
+    def _contains_solution_keyword_extended(self, message):
+        """Cek solution keyword dengan daftar yang diperluas"""
+        msg = str(message).lower()
+        return any(k in msg for k in self.solution_keywords_extended)
 
     def analyze_replies(self, ticket_id, ticket_df, qa_pairs, main_issue):
         print(f"🔍 Analyzing replies for ticket {ticket_id}")
@@ -1617,18 +1725,23 @@ class ReplyAnalyzer:
             
         msg = message.lower()
         
+        # Skip questions
         if any(q in msg for q in ['?', 'apa ', 'bagaimana ', 'berapa ', 'kapan ', 'dimana ', 'kenapa ', 'mengapa ']):
             return False
         
+        # Skip greetings
         if any(g in msg for g in ['selamat pagi', 'selamat siang', 'halo', 'hai']):
             return False
         
+        # Minimal panjang
         if len(msg.split()) < 8:
             return False
             
-        return any(k in msg for k in (config.SOLUTION_KEYWORDS + config.ACTION_KEYWORDS))
+        # PERBAIKAN: Gunakan extended keywords
+        return any(k in msg for k in (self.solution_keywords_extended + config.ACTION_KEYWORDS))
 
     def _find_solution_reply(self, ticket_df, question_time):
+        """Original method - tetap dipertahankan untuk compatibility"""
         operator_messages = ticket_df[
             (ticket_df['parsed_timestamp'] > question_time) &
             (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
@@ -1640,7 +1753,7 @@ class ReplyAnalyzer:
             
         for _, msg in operator_messages.iterrows():
             if not any(c in msg['Message'].lower() for c in config.CLOSING_PATTERNS):
-                if self._contains_solution_keyword(msg['Message']):
+                if self._contains_solution_keyword_extended(msg['Message']):
                     lt = (msg['parsed_timestamp'] - question_time).total_seconds()
                     return {
                         'message': msg['Message'],
@@ -1681,6 +1794,7 @@ class ReplyAnalyzer:
         return any(k in msg for k in config.ACTION_KEYWORDS)
         
     def _contains_solution_keyword(self, message):
+        """Original method - untuk compatibility"""
         msg = str(message).lower()
         return any(k in msg for k in config.SOLUTION_KEYWORDS)
 
@@ -2192,5 +2306,6 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
