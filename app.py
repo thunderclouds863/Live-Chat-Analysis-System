@@ -206,20 +206,24 @@ def main_interface():
         st.info("""
         **🤖 Hybrid Intelligence Engine Features:**
         
-        **🧠 Core AI & Algorithms:** • **Hybrid Architecture:** Menggabungkan *Rule-Based Keywords* (Presisi) dengan **Machine Learning** (Fleksibilitas).  
-        • **Semantic Matching:** Menggunakan algoritma **TF-IDF Vectorization** & **Cosine Similarity** untuk memahami makna kalimat (bukan sekadar mencocokkan kata).  
-        • **Golden Answer Validation:** Memvalidasi jawaban operator dengan membandingkan kemiripan semantik terhadap "Kunci Jawaban" (Training Data).
+        **🧠 Core AI & Algorithms:**
+        • **Hybrid Architecture:** Combines **Rule-Based Keywords** (for precision) with **Machine Learning** (for flexibility).
+        • **Semantic Matching:** Utilizes **TF-IDF Vectorization** & **Cosine Similarity** to understand sentence meaning rather than just matching exact words.
+        • **Golden Answer Validation:** Validates operator responses by measuring semantic similarity against a "Ground Truth" dataset (Training Data).
         
-        **🔍 Advanced Detection Logic:** • **Contextual Queue Analysis:** Menganalisis chat "buffer" (15 menit sebelum operator masuk) untuk menangkap konteks awal yang sering terlewat.  
-        • **Smart Role & Bot Filtering:** Algoritma pembersihan otomatis untuk membuang *Bot Navigation Commands* dan mendeteksi serah-terima (handover) Operator yang akurat.  
-        • **Intent Scoring System:** Skor prioritas dinamis berdasarkan urgensi kata kunci + skor kemiripan ML.
+        **🔍 Advanced Detection Logic:**
+        • **Contextual Queue Analysis:** Scans the "Queue Buffer" (15 mins before operator joins) to capture initial customer intent often missed by standard parsers.
+        • **Smart Role & Bot Filtering:** Advanced noise reduction to strip out *Bot Navigation Commands* and accurately detect Operator handovers.
+        • **Intent Scoring System:** Dynamic priority scoring based on Keyword Urgency + ML Confidence Score.
 
-        **📈 Performance Metrics:** • **First & Final Reply Compliance:** Analisis ketepatan jawaban pertama dan solusi akhir.  
-        • **Enhanced Customer Leave:** Logika deteksi "Ghosting" yang membedakan antara antrian diam dan sesi aktif yang ditinggalkan.  
-        • **Quality Scoring (0-6):** Penilaian otomatis kualitas penanganan tiket.  
+        **📈 Performance Metrics:**
+        • **First & Final Reply Compliance:** Checks if the operator provided a valid opening and a substantive solution.
+        • **Enhanced Customer Leave:** Distinguishes between a silent queue (waiting) and an abandoned active session (ghosting).
+        • **Quality Scoring (0-6):** Automated 6-point quality assessment per ticket.
         
-        **🛡️ Robustness:** • **Fail-Safe Mechanism:** Otomatis beralih ke mode *Rule-Based* jika model ML tidak tersedia atau confidence score rendah.  
-        • **Multi-Format Support:** Mendukung input Raw Data (.xlsx) dan Complaint Data untuk matching otomatis.
+        **🛡️ System Robustness:**
+        • **Fail-Safe Mechanism:** Automatically falls back to *Rule-Based Mode* if the ML model is unavailable or confidence is low.
+        • **Multi-Format Support:** Processes Raw Conversation Data (.xlsx) with automatic Complaint Ticket matching.
         """, icon="ℹ️")
     
     # Main content area
