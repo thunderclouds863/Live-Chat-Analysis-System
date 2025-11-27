@@ -50,7 +50,7 @@ class config:
     
     # Action keywords untuk serious first reply - DIPERBANYAK
     ACTION_KEYWORDS = [
-        "bantu koordinasikan", "bantu", "koordinasikan", "diteruskan", "disampaikan", "dihubungi", "dicek", "dipelajari",
+        "bisa menghubungi", "bantu koordinasikan", "bantu", "koordinasikan", "diteruskan", "disampaikan", "dihubungi", "dicek", "dipelajari",
         "ditindaklanjuti", "dilakukan pengecekan", "dibantu", "dikonsultasikan",
         "dikoordinasikan", "dilaporkan", "dievaluasi", "dianalisis", "diperbaiki",
         "diatasi", "diselesaikan", "ditangani", "diperhatikan", "direspons",
@@ -66,7 +66,7 @@ class config:
     
     # Solution keywords untuk normal reply
     SOLUTION_KEYWORDS = [
-        'solusi', 'jawaban', 'caranya', 'prosedur', 'bisa menghubungi', 'silakan menghubungi', 
+        'bisa menghubungi', 'solusi', 'jawaban', 'caranya', 'prosedur', 'bisa menghubungi', 'silakan menghubungi', 
         'disarankan untuk', 'rekomendasi', 'bisa dilakukan', 'langkah', 'cara', 'solusinya',
         'penyelesaian', 'penanganan', 'informasi', 'dijelaskan', 'diberitahu', 'diberikan',
         'dapat dilakukan', 'bisa dengan', 'dapat diatasi', 'cara mengatasi', 'penyebab',
@@ -2022,3 +2022,4 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
