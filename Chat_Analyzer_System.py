@@ -50,7 +50,7 @@ class config:
     
     # Action keywords untuk serious first reply - DIPERBANYAK
     ACTION_KEYWORDS = [
-        "bantu koordinasikan", "bantu", "koordinasikan", "diteruskan", "disampaikan", "dihubungi", "dicek", "dipelajari",
+        "bisa menghubungi", "bantu koordinasikan", "bantu", "koordinasikan", "diteruskan", "disampaikan", "dihubungi", "dicek", "dipelajari",
         "ditindaklanjuti", "dilakukan pengecekan", "dibantu", "dikonsultasikan",
         "dikoordinasikan", "dilaporkan", "dievaluasi", "dianalisis", "diperbaiki",
         "diatasi", "diselesaikan", "ditangani", "diperhatikan", "direspons",
@@ -66,7 +66,7 @@ class config:
     
     # Solution keywords untuk normal reply
     SOLUTION_KEYWORDS = [
-        'solusi', 'jawaban', 'caranya', 'prosedur', 'bisa menghubungi', 'silakan menghubungi', 
+        'bisa menghubungi', 'solusi', 'jawaban', 'caranya', 'prosedur', 'bisa menghubungi', 'silakan menghubungi', 
         'disarankan untuk', 'rekomendasi', 'bisa dilakukan', 'langkah', 'cara', 'solusinya',
         'penyelesaian', 'penanganan', 'informasi', 'dijelaskan', 'diberitahu', 'diberikan',
         'dapat dilakukan', 'bisa dengan', 'dapat diatasi', 'cara mengatasi', 'penyebab',
@@ -1136,7 +1136,8 @@ class MainIssueDetector:
                 'detection_reason': self._get_detection_reason(final_score)
             }
         return None
-
+    
+# Perbaiki ReplyAnalyzer dengan logic baru
 class ReplyAnalyzer:
     def __init__(self, complaint_tickets=None):
         self.complaint_tickets = complaint_tickets or {}
@@ -1166,187 +1167,6 @@ class ReplyAnalyzer:
             'bantu buatkan', 'kendala', 'keluhan', 'stnk', 'bpkb', 'sampaikan',
             'mohon menunggu', 'koordinasi', 'penjelasan'
         ]
-
-    def _check_enhanced_customer_leave(self, ticket_df, first_reply_found, final_reply_found, question_time):
-        """Enhanced customer leave detection dengan logika yang lebih akurat"""
-        
-        # Cari semua automation messages dengan keyword customer leave
-        automation_messages = ticket_df[
-            (ticket_df['Role'].str.lower().str.contains('automation', na=False)) &
-            (ticket_df['Message'].str.contains(config.CUSTOMER_LEAVE_KEYWORD, na=False))
-        ]
-        
-        if automation_messages.empty:
-            return False
-        
-        # Ambil pesan automation pertama yang mengandung keyword leave
-        leave_message = automation_messages.iloc[0]
-        leave_time = leave_message['parsed_timestamp']
-        
-        print(f"   ⏰ Found automation leave message at: {leave_time}")
-        
-        # Cari operator greeting sebelum leave message
-        operator_greetings = self._find_operator_greetings_before_time(ticket_df, leave_time)
-        
-        if not operator_greetings:
-            print("   ⚠️ No operator greeting found before leave message")
-            return False
-        
-        # Ambil greeting terakhir sebelum leave
-        last_greeting = operator_greetings.iloc[-1]
-        greeting_time = last_greeting['parsed_timestamp']
-        
-        print(f"   👋 Last operator greeting at: {greeting_time}")
-        print(f"   ⏱️  Time gap: {(leave_time - greeting_time).total_seconds() / 60:.1f} minutes")
-        
-        # Cek apakah ada interaksi customer setelah greeting dan sebelum leave
-        customer_interactions = self._find_customer_interactions_after_greeting(
-            ticket_df, greeting_time, leave_time
-        )
-        
-        # Cek apakah ada interaksi operator setelah greeting dan sebelum leave
-        operator_interactions = self._find_operator_interactions_after_greeting(
-            ticket_df, greeting_time, leave_time
-        )
-        
-        print(f"   💬 Customer interactions after greeting: {len(customer_interactions)}")
-        print(f"   👨‍💼 Operator interactions after greeting: {len(operator_interactions)}")
-        
-        # **LOGIKA UTAMA: Hanya dianggap customer leave jika:**
-        # 1. Ada operator greeting
-        # 2. TIDAK ADA interaksi customer setelah greeting
-        # 3. TIDAK ADA interaksi operator meaningful setelah greeting (selain mungkin greeting ulang)
-        # 4. Ada automation leave message
-        
-        is_true_leave = (
-            len(customer_interactions) == 0 and 
-            len(operator_interactions) == 0 and
-            len(operator_greetings) > 0
-        )
-        
-        if is_true_leave:
-            print("   ✅ TRUE CUSTOMER LEAVE: No interactions after operator greeting")
-        else:
-            print("   ❌ NOT customer leave: Found interactions after greeting")
-            
-        return is_true_leave
-
-    def _find_operator_greetings_before_time(self, ticket_df, target_time):
-        """Cari operator greetings sebelum waktu tertentu"""
-        operator_messages = ticket_df[
-            (ticket_df['parsed_timestamp'] < target_time) &
-            (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
-        ]
-        
-        greetings = []
-        for _, msg in operator_messages.iterrows():
-            if self._is_operator_greeting(msg['Message']):
-                greetings.append(msg)
-        
-        return pd.DataFrame(greetings) if greetings else pd.DataFrame()
-
-    def _is_operator_greeting(self, message):
-        """Cek apakah message adalah operator greeting"""
-        message_lower = str(message).lower()
-        
-        greeting_patterns = [
-            r"selamat\s+(pagi|siang|sore|malam)",
-            r"selamat\s+datang",
-            r"dengan\s+\w+\s+apakah\s+ada",
-            r"ada\s+yang\s+bisa\s+dibantu",
-            r"boleh\s+dibantu",
-            r"bisa\s+dibantu",
-            r"halo.*selamat",
-            r"hai.*selamat",
-            r"perkenalkan.*saya",
-            r"layanan\s+live\s+chat",
-            r"live\s+chat\s+toyota",
-            r"toyota\s+astra\s+motor"
-        ]
-        
-        return any(re.search(pattern, message_lower, re.IGNORECASE) for pattern in greeting_patterns)
-
-    def _find_customer_interactions_after_greeting(self, ticket_df, greeting_time, leave_time):
-        """Cari interaksi customer setelah greeting dan sebelum leave"""
-        customer_messages = ticket_df[
-            (ticket_df['parsed_timestamp'] > greeting_time) &
-            (ticket_df['parsed_timestamp'] < leave_time) &
-            (ticket_df['Role'].str.lower().str.contains('customer', na=False))
-        ]
-        
-        # Filter hanya messages yang meaningful (bukan ucapan singkat)
-        meaningful_interactions = []
-        for _, msg in customer_messages.iterrows():
-            if self._is_meaningful_customer_message(msg['Message']):
-                meaningful_interactions.append(msg)
-        
-        return meaningful_interactions
-
-    def _find_operator_interactions_after_greeting(self, ticket_df, greeting_time, leave_time):
-        """Cari interaksi operator meaningful setelah greeting dan sebelum leave"""
-        operator_messages = ticket_df[
-            (ticket_df['parsed_timestamp'] > greeting_time) &
-            (ticket_df['parsed_timestamp'] < leave_time) &
-            (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
-        ]
-        
-        # Filter hanya messages yang meaningful (bukan greeting ulang atau konfirmasi)
-        meaningful_interactions = []
-        for _, msg in operator_messages.iterrows():
-            if self._is_meaningful_operator_message(msg['Message']):
-                meaningful_interactions.append(msg)
-        
-        return meaningful_interactions
-
-    def _is_meaningful_customer_message(self, message):
-        """Cek apakah customer message meaningful (bukan ucapan singkat)"""
-        if not message or len(message.strip()) < 10:
-            return False
-            
-        message_lower = message.lower().strip()
-        
-        # Skip very short responses
-        short_responses = ['ok', 'oke', 'baik', 'sip', 'terima kasih', 'thanks', 'thank you']
-        if message_lower in short_responses:
-            return False
-            
-        # Skip single word responses unless they're questions
-        words = message_lower.split()
-        if len(words) <= 2 and not any(q in message_lower for q in ['?', 'apa', 'bagaimana', 'berapa']):
-            return False
-            
-        return True
-
-    def _is_meaningful_operator_message(self, message):
-        """Cek apakah operator message meaningful (bukan greeting ulang atau konfirmasi)"""
-        if not message or len(message.strip()) < 15:
-            return False
-            
-        message_lower = message.lower().strip()
-        
-        # Skip duplicate greetings
-        if self._is_operator_greeting(message):
-            return False
-            
-        # Skip simple confirmations
-        simple_confirmations = [
-            'baik', 'baik sekali', 'terima kasih', 'silahkan', 'oke', 'ok',
-            'baik [a-zA-Z]+', 'terimakasih', 'siap', 'baik ditunggu'
-        ]
-        
-        if any(re.search(pattern, message_lower) for pattern in simple_confirmations):
-            return len(message_lower.split()) > 3  # Only if it's more than just the confirmation
-            
-        # Skip questions about presence
-        presence_questions = [
-            'apakah masih ada', 'apakah bapak/ibu masih', 'apakah anda masih',
-            'apakah masih bersama kami', 'apakah masih online'
-        ]
-        
-        if any(q in message_lower for q in presence_questions):
-            return False
-            
-        return True
 
     def _is_complaint_ticket(self, ticket_id):
         """Cek apakah ticket termasuk complaint"""
@@ -1615,6 +1435,18 @@ class ReplyAnalyzer:
             
         return any(k in msg for k in (config.SOLUTION_KEYWORDS + config.ACTION_KEYWORDS))
 
+    def _check_enhanced_customer_leave(self, ticket_df, first_reply_found, final_reply_found, question_time):
+        if final_reply_found:
+            return False
+        if first_reply_found:
+            return False
+        
+        automation = ticket_df[
+            (ticket_df['Role'].str.lower().str.contains('automation', na=False)) &
+            (ticket_df['Message'].str.contains(config.CUSTOMER_LEAVE_KEYWORD, na=False))
+        ]
+        return not automation.empty
+
     def _find_solution_reply(self, ticket_df, question_time):
         operator_messages = ticket_df[
             (ticket_df['parsed_timestamp'] > question_time) &
@@ -1692,7 +1524,7 @@ class ReplyAnalyzer:
         m = int((sec % 3600) // 60)
         s = int(sec % 60)
         return f"{h:02d}:{m:02d}:{s:02d}"
-
+                 
 class CompleteAnalysisPipeline:
     def __init__(self, complaint_data_path=None):
         self.preprocessor = DataPreprocessor()
@@ -2189,5 +2021,4 @@ print("   ✓ New role handling (Ticket Automation & Blank)")
 print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
-print("   ✓ Enhanced customer leave detection")
 print("=" * 60)
