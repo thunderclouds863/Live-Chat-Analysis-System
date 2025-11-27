@@ -204,28 +204,22 @@ def main_interface():
         st.markdown("---")
         st.markdown("### 📖 How to Use")
         st.info("""
-        **🤖 Analysis Engine Features:**
+        **🤖 Hybrid Intelligence Engine Features:**
         
-        **🔍 Core Detection:**  
-        • Smart Role Handling (Customer/Operator/Bot/Automation)  
-        • Complaint Ticket Matching via Phone Numbers  
-        • Multi-Type Inquiry Classification (Normal/Serious/Complaint)  
-        • Intelligent Q-A Pair Extraction  
+        **🧠 Core AI & Algorithms:** • **Hybrid Architecture:** Menggabungkan *Rule-Based Keywords* (Presisi) dengan **Machine Learning** (Fleksibilitas).  
+        • **Semantic Matching:** Menggunakan algoritma **TF-IDF Vectorization** & **Cosine Similarity** untuk memahami makna kalimat (bukan sekadar mencocokkan kata).  
+        • **Golden Answer Validation:** Memvalidasi jawaban operator dengan membandingkan kemiripan semantik terhadap "Kunci Jawaban" (Training Data).
         
-        **📈 Performance Metrics:**  
-        • First & Final Reply Compliance Checking  
-        • Customer Leave & Abandonment Detection  
-        • Quality Scoring System (0-6 points)  
-        • Lead Time Analysis (Minutes/Days)  
+        **🔍 Advanced Detection Logic:** • **Contextual Queue Analysis:** Menganalisis chat "buffer" (15 menit sebelum operator masuk) untuk menangkap konteks awal yang sering terlewat.  
+        • **Smart Role & Bot Filtering:** Algoritma pembersihan otomatis untuk membuang *Bot Navigation Commands* dan mendeteksi serah-terima (handover) Operator yang akurat.  
+        • **Intent Scoring System:** Skor prioritas dinamis berdasarkan urgensi kata kunci + skor kemiripan ML.
+
+        **📈 Performance Metrics:** • **First & Final Reply Compliance:** Analisis ketepatan jawaban pertama dan solusi akhir.  
+        • **Enhanced Customer Leave:** Logika deteksi "Ghosting" yang membedakan antara antrian diam dan sesi aktif yang ditinggalkan.  
+        • **Quality Scoring (0-6):** Penilaian otomatis kualitas penanganan tiket.  
         
-        **🔄 Processing:**  
-        • Multi-Stage Conversation Parsing  
-        • Context-Aware Inquiry Detection  
-        • Automated Performance Rating  
-        
-        **📁 Input Requirements:**  
-        • Raw Conversation Data (.xlsx format)  
-        • Complaint Data (with No.Handphone column)
+        **🛡️ Robustness:** • **Fail-Safe Mechanism:** Otomatis beralih ke mode *Rule-Based* jika model ML tidak tersedia atau confidence score rendah.  
+        • **Multi-Format Support:** Mendukung input Raw Data (.xlsx) dan Complaint Data untuk matching otomatis.
         """, icon="ℹ️")
     
     # Main content area
@@ -1540,7 +1534,6 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
-
 
 
 
