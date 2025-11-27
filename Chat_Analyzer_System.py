@@ -1137,7 +1137,6 @@ class MainIssueDetector:
             }
         return None
     
-# Perbaiki ReplyAnalyzer dengan logic baru
 class ReplyAnalyzer:
     def __init__(self, complaint_tickets=None):
         self.complaint_tickets = complaint_tickets or {}
@@ -1177,6 +1176,7 @@ class ReplyAnalyzer:
             (ticket_df['Message'].str.contains(config.CUSTOMER_LEAVE_KEYWORD, na=False))
         ]
         
+        # PERBAIKAN: Gunakan .empty untuk cek DataFrame
         if automation_messages.empty:
             return False
         
@@ -1189,7 +1189,8 @@ class ReplyAnalyzer:
         # Cari operator greeting sebelum leave message
         operator_greetings = self._find_operator_greetings_before_time(ticket_df, leave_time)
         
-        if not operator_greetings:
+        # PERBAIKAN: Gunakan .empty untuk cek DataFrame
+        if operator_greetings.empty:
             print("   ⚠️ No operator greeting found before leave message")
             return False
         
@@ -1222,7 +1223,7 @@ class ReplyAnalyzer:
         is_true_leave = (
             len(customer_interactions) == 0 and 
             len(operator_interactions) == 0 and
-            len(operator_greetings) > 0
+            not operator_greetings.empty  # PERBAIKAN: Gunakan .empty
         )
         
         if is_true_leave:
@@ -1244,6 +1245,7 @@ class ReplyAnalyzer:
             if self._is_operator_greeting(msg['Message']):
                 greetings.append(msg)
         
+        # PERBAIKAN: Return DataFrame yang benar
         return pd.DataFrame(greetings) if greetings else pd.DataFrame()
 
     def _is_operator_greeting(self, message):
@@ -1424,6 +1426,7 @@ class ReplyAnalyzer:
             (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
         ].sort_values('parsed_timestamp')
         
+        # PERBAIKAN: Gunakan .empty untuk cek DataFrame
         if operator_messages.empty:
             return None
 
@@ -1515,7 +1518,8 @@ class ReplyAnalyzer:
                 
                 serious_result = self._analyze_enhanced_serious_replies(ticket_df, qa_pairs, main_issue)
                 
-                if serious_result and serious_result.get('final_reply') is None:
+                # PERBAIKAN: Cek dengan benar untuk None
+                if serious_result is None or serious_result.get('final_reply') is None:
                     print("   🔄 SERIOUS failed (no final reply) - falling back to NORMAL")
                     return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
                 
@@ -1537,6 +1541,10 @@ class ReplyAnalyzer:
         
         after_reopened = ticket_df[ticket_df['parsed_timestamp'] > reopened_time]
         
+        # PERBAIKAN: Gunakan .empty untuk cek DataFrame
+        if after_reopened.empty:
+            return False
+            
         for _, row in after_reopened.iterrows():
             msg = str(row['Message']).lower()
             if any(p in msg for p in ['reassigned to', 'claimed by system to']):
@@ -1582,6 +1590,10 @@ class ReplyAnalyzer:
             (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
         ].sort_values('parsed_timestamp')
 
+        # PERBAIKAN: Gunakan .empty untuk cek DataFrame
+        if operator_messages.empty:
+            return None
+
         solution_replies = []
         for _, msg in operator_messages.iterrows():
             if self._is_proper_solution_reply(msg['Message']):
@@ -1622,6 +1634,10 @@ class ReplyAnalyzer:
             (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
         ].sort_values('parsed_timestamp')
         
+        # PERBAIKAN: Gunakan .empty untuk cek DataFrame
+        if operator_messages.empty:
+            return None
+            
         for _, msg in operator_messages.iterrows():
             if not any(c in msg['Message'].lower() for c in config.CLOSING_PATTERNS):
                 if self._contains_solution_keyword(msg['Message']):
@@ -1636,30 +1652,6 @@ class ReplyAnalyzer:
                     }
         return None
 
-    # Untuk backwards compatibility method lama, dialihkan ke method baru
-    def _find_first_reply(self, ticket_df, question_time):
-        # Fallback ke logika simple untuk non-complaint
-        operator_messages = ticket_df[
-            (ticket_df['parsed_timestamp'] > question_time) &
-            (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
-        ].sort_values('parsed_timestamp')
-        
-        if operator_messages.empty:
-            return None
-        
-        # Cari yang bukan system message
-        for _, msg in operator_messages.iterrows():
-            if not self._is_system_message(msg['Message']):
-                lt = (msg['parsed_timestamp'] - question_time).total_seconds()
-                return {
-                    'message': msg['Message'],
-                    'timestamp': msg['parsed_timestamp'],
-                    'lead_time_seconds': lt,
-                    'lead_time_minutes': round(lt/60,2),
-                    'lead_time_hhmmss': self._seconds_to_hhmmss(lt)
-                }
-        return None
-
     def _find_serious_first_reply(self, ticket_df, question_time, reopened_time):
         print("   🔍 Finding serious FIRST reply...")
         operator_messages = ticket_df[
@@ -1668,6 +1660,10 @@ class ReplyAnalyzer:
             (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
         ].sort_values('parsed_timestamp')
         
+        # PERBAIKAN: Gunakan .empty untuk cek DataFrame
+        if operator_messages.empty:
+            return None
+            
         for _, msg in operator_messages.iterrows():
             if self._contains_action_keyword(msg['Message']):
                 lt = (msg['parsed_timestamp'] - question_time).total_seconds()
@@ -1689,10 +1685,15 @@ class ReplyAnalyzer:
         return any(k in msg for k in config.SOLUTION_KEYWORDS)
 
     def _seconds_to_hhmmss(self, sec):
-        h = int(sec // 3600)
-        m = int((sec % 3600) // 60)
-        s = int(sec % 60)
-        return f"{h:02d}:{m:02d}:{s:02d}"
+        if sec is None:
+            return "00:00:00"
+        try:
+            h = int(sec // 3600)
+            m = int((sec % 3600) // 60)
+            s = int(sec % 60)
+            return f"{h:02d}:{m:02d}:{s:02d}"
+        except:
+            return "00:00:00"
                  
 class CompleteAnalysisPipeline:
     def __init__(self, complaint_data_path=None):
@@ -2191,4 +2192,5 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
