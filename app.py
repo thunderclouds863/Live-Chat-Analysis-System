@@ -204,26 +204,25 @@ def main_interface():
         st.markdown("---")
         st.markdown("### 📖 How to Use")
         st.info("""
-        **🤖 Hybrid Intelligence Engine Features:**
-        
-        **🧠 Core AI & Algorithms:**
-        • **Hybrid Architecture:** Combines **Rule-Based Keywords** (for precision) with **Machine Learning** (for flexibility).
-        • **Semantic Matching:** Utilizes **TF-IDF Vectorization** & **Cosine Similarity** to understand sentence meaning rather than just matching exact words.
-        • **Golden Answer Validation:** Validates operator responses by measuring semantic similarity against a "Ground Truth" dataset (Training Data).
-        
-        **🔍 Advanced Detection Logic:**
-        • **Contextual Queue Analysis:** Scans the "Queue Buffer" (15 mins before operator joins) to capture initial customer intent often missed by standard parsers.
-        • **Smart Role & Bot Filtering:** Advanced noise reduction to strip out *Bot Navigation Commands* and accurately detect Operator handovers.
-        • **Intent Scoring System:** Dynamic priority scoring based on Keyword Urgency + ML Confidence Score.
+        **🤖 Hybrid Intelligence Engine Features**
 
-        **📈 Performance Metrics:**
-        • **First & Final Reply Compliance:** Checks if the operator provided a valid opening and a substantive solution.
-        • **Enhanced Customer Leave:** Distinguishes between a silent queue (waiting) and an abandoned active session (ghosting).
-        • **Quality Scoring (0-6):** Automated 6-point quality assessment per ticket.
-        
-        **🛡️ System Robustness:**
-        • **Fail-Safe Mechanism:** Automatically falls back to *Rule-Based Mode* if the ML model is unavailable or confidence is low.
-        • **Multi-Format Support:** Processes Raw Conversation Data (.xlsx) with automatic Complaint Ticket matching.
+        **🧠 Core AI & Algorithms**
+        • Hybrid Architecture: Combines Rule-Based Keywords (precision) with Machine Learning (flexibility)
+        • Semantic Matching: Uses TF-IDF Vectorization & Cosine Similarity for semantic understanding  
+        • Golden Answer Validation: Measures similarity against Ground Truth dataset
+
+        **🔍 Advanced Detection Logic**
+        • Smart Role & Bot Filtering: Removes bot navigation commands
+        • Intent Scoring System: Combines Keyword Urgency + ML Confidence
+
+        **📈 Performance Metrics**
+        • First & Final Reply Compliance: Validates operator response quality
+        • Enhanced Customer Leave: Detects true abandonment vs waiting
+        • Quality Scoring (0-6): Automated 6-point assessment
+
+        **🛡️ System Robustness**
+        • Fail-Safe Mechanism: Falls back to Rule-Based mode if ML fails
+        • Multi-Format Support: Handles .xlsx with Complaint matching
         """, icon="ℹ️")
     
     # Main content area
@@ -1538,6 +1537,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
