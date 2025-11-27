@@ -204,19 +204,29 @@ def main_interface():
         st.markdown("---")
         st.markdown("### 📖 How to Use")
         st.info("""
-        **Analysis Features:**
-        1. **New Role Handling**: Ticket Automation & Blank roles
-        2. **Complaint Detection**: Matches phones between files
-        3. **Smart Inquiry Typing**: 
-           - Normal: Direct solutions
-           - Serious: Ticket reopened cases  
-           - Complaint: From complaint system
-        4. **Customer Leave Detection**: Based on automation messages
+        **🤖 Analysis Engine Features:**
         
-        **Required Files:**
-        - Raw Conversation Data
-        - Complaint Data (with No.Handphone)
-        """)
+        **🔍 Core Detection:**  
+        • Smart Role Handling (Customer/Operator/Bot/Automation)  
+        • Complaint Ticket Matching via Phone Numbers  
+        • Multi-Type Inquiry Classification (Normal/Serious/Complaint)  
+        • Intelligent Q-A Pair Extraction  
+        
+        **📈 Performance Metrics:**  
+        • First & Final Reply Compliance Checking  
+        • Customer Leave & Abandonment Detection  
+        • Quality Scoring System (0-6 points)  
+        • Lead Time Analysis (Minutes/Days)  
+        
+        **🔄 Processing:**  
+        • Multi-Stage Conversation Parsing  
+        • Context-Aware Inquiry Detection  
+        • Automated Performance Rating  
+        
+        **📁 Input Requirements:**  
+        • Raw Conversation Data (.xlsx format)  
+        • Complaint Data (with No.Handphone column)
+        """, icon="ℹ️")
     
     # Main content area
     if uploaded_raw_file is not None and uploaded_complaint_file is not None:
@@ -636,14 +646,14 @@ def display_professional_overview_tab(results, stats):
             fig_issues = px.pie(
                 values=counts, 
                 names=issue_types,
-                title='Issue Type Distribution',
+                title='Inquiry Type Distribution',
                 color=issue_types,
                 color_discrete_map=color_map
             )
             fig_issues.update_layout(showlegend=True)
             st.plotly_chart(fig_issues, use_container_width=True)
         else:
-            st.info("📊 No issue type data available for visualization")
+            st.info("📊 No inquiry type data available for visualization")
     
     with col2:
         # Performance Distribution
@@ -752,7 +762,7 @@ def display_enhanced_lead_time_tab(results, stats):
         st.metric("Final Reply Samples", lead_time_stats['final_samples'])
 
     # 2. BREAKDOWN PER ISSUE TYPE (SEMUA DISATUKAN)
-    st.markdown("### 📈 Lead Time Breakdown by Issue Type")
+    st.markdown("### 📈 Lead Time Breakdown by Inquiry Type")
     
     lead_time_by_type = {}
     for result in successful:
@@ -1052,11 +1062,11 @@ def display_enhanced_lead_time_tab(results, stats):
         
         fig_comparison = px.bar(
             df_comparison, 
-            x='Issue Type', 
+            x='Inquiry Type', 
             y='Average Lead Time',
             color='Reply Type',
-            title=f'Average Lead Time Comparison by Issue Type',
-            labels={'Average Lead Time': y_title, 'Issue Type': 'Issue Type'},
+            title=f'Average Lead Time Comparison by Inquiry Type',
+            labels={'Average Lead Time': y_title, 'Inquiry Type': 'Inquiry Type'},
             barmode='group',
             color_discrete_map={
                 'First Reply': '#2E86AB',
@@ -1076,13 +1086,13 @@ def display_enhanced_lead_time_tab(results, stats):
                     
 def display_issue_types_tab(results, stats):
     """Display issue types analysis"""
-    st.markdown("## 🎯 Issue Types Analysis")
+    st.markdown("## 🎯 Inquiry Types Analysis")
     
     successful = [r for r in results if r['status'] == 'success']
     
     if successful:
         # Summary by issue type
-        st.markdown("### 📊 Summary by Issue Type")
+        st.markdown("### 📊 Summary by Inquiry Type")
         
         issue_summary = {}
         for result in successful:
@@ -1110,7 +1120,7 @@ def display_issue_types_tab(results, stats):
             final_reply_rate = (data['final_reply_found'] / data['count']) * 100
             
             summary_data.append({
-                'Issue Type': issue_type.upper(),
+                'Inquiry Type': issue_type.upper(),
                 'Count': data['count'],
                 'Avg Quality Score': f"{avg_quality:.1f}",
                 'First Reply Rate': f"{first_reply_rate:.1f}%",
@@ -1121,7 +1131,7 @@ def display_issue_types_tab(results, stats):
         st.dataframe(df_summary, use_container_width=True)
         
         # Detailed view
-        st.markdown("### 📋 Detailed Issues View")
+        st.markdown("### 📋 Detailed Inquiries View")
         
         display_data = []
         for result in successful:
@@ -1133,7 +1143,7 @@ def display_issue_types_tab(results, stats):
             
             display_data.append({
                 'Ticket ID': result['ticket_id'],
-                'Issue Type': result['final_issue_type'].upper(),
+                'Inquiry Type': result['final_issue_type'].upper(),
                 'Main Question': result['main_question'][:80] + '...',
                 'First Reply': '✅' if result['first_reply_found'] else '❌',
                 'Final Reply': '✅' if result['final_reply_found'] else '❌',
@@ -1176,7 +1186,7 @@ def display_enhanced_ticket_details(result):
     
     st.markdown(f"""
     <div style="background-color: {issue_color}; color: white; padding: 10px; border-radius: 5px; margin: 10px 0;">
-        <strong>Issue Type:</strong> {issue_type.upper()}
+        <strong>Inquiry Type:</strong> {issue_type.upper()}
     </div>
     """, unsafe_allow_html=True)
     
@@ -1246,7 +1256,7 @@ def display_enhanced_ticket_details(result):
                 
                 with col1:
                     st.markdown("**Basic Info**")
-                    st.write(f"**Issue Type:** {reply_analysis.get('issue_type', 'N/A')}")
+                    st.write(f"**Inquiry Type:** {reply_analysis.get('issue_type', 'N/A')}")
                     st.write(f"**Customer Leave:** {reply_analysis.get('customer_leave', False)}")
                     st.write(f"**Requirement Compliant:** {reply_analysis.get('requirement_compliant', False)}")
                 
@@ -1331,7 +1341,7 @@ def display_performance_tab(results, stats):
                     x='issue_type',
                     y=perf_pivot.columns[1:].tolist(),
                     title='Performance Rating by Issue Type',
-                    labels={'value': 'Count', 'issue_type': 'Issue Type'},
+                    labels={'value': 'Count', 'issue_type': 'Inquiry Type'},
                     barmode='stack'
                 )
                 st.plotly_chart(fig_stacked, use_container_width=True)
@@ -1359,7 +1369,7 @@ def display_performance_tab(results, stats):
             
             perf_metrics.append({
                 'Ticket ID': result['ticket_id'],
-                'Issue Type': result['final_issue_type'],
+                'Inquiry Type': result['final_issue_type'],
                 'Performance': result['performance_rating'].upper(),
                 'Quality Score': result['quality_score'],
                 'First Reply LT': result.get('first_reply_lead_time_minutes', 'N/A'),
@@ -1397,7 +1407,7 @@ def display_enhanced_special_cases_tab(results, stats):
             for result in customer_leave_cases:
                 leave_data.append({
                     'Ticket ID': result['ticket_id'],
-                    'Issue Type': result['final_issue_type'].upper(),
+                    'Inquiry Type': result['final_issue_type'].upper(),
                     'Main Question': result['main_question'][:60] + '...',
                     'Final Reply Status': '✅ Found' if result['final_reply_found'] else '❌ Missing',
                     'Performance': result['performance_rating'].upper()
@@ -1423,7 +1433,7 @@ def display_raw_data_tab(results):
             raw_data.append({
                 'Ticket ID': result['ticket_id'],
                 'Main Question': result['main_question'],
-                'Issue Type': result['final_issue_type'],
+                'Inquiry Type': result['final_issue_type'],
                 'First Reply Found': result['first_reply_found'],
                 'First Reply Message': result.get('first_reply_message', '')[:100] + '...' if result.get('first_reply_message') else 'Not found',
                 'First Reply LT (min)': result.get('first_reply_lead_time_minutes'),
@@ -1459,7 +1469,7 @@ def display_debug_tab(results, stats):
         st.metric("Success Rate", f"{(len(successful)/len(results))*100:.1f}%" if results else "0%")
     
     with col2:
-        st.markdown("### ⚠️ Common Issues")
+        st.markdown("### ⚠️ Common Inquiries")
         
         # Check for negative lead times
         negative_lead_times = []
@@ -1530,6 +1540,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
