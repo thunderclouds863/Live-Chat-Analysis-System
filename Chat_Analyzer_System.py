@@ -16,6 +16,9 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 import warnings
+import joblib
+from sklearn.feature_extraction.text import TfidfVectorizer
+import joblib
 warnings.filterwarnings('ignore')
 
 # Configuration
@@ -75,7 +78,7 @@ class config:
     
     # Closing message patterns untuk dihindari sebagai final reply
     CLOSING_PATTERNS = [
-        'apabila sudah cukup', 'apakah sudah cukup', 'apakah informasinya sudah cukup',
+        'informasi cukup', 'informasi cukup?', 'dibantu kembali', 'bantu kembali', 'ada hal lain', 'apabila sudah cukup', 'apakah sudah cukup', 'apakah informasinya sudah cukup',
         'terima kasih telah menghubungi', 'selamat beraktivitas', 'goodbye', 'bye',
         'sampai jumpa', 'terima kasih', 'semoga membantu', 'jika ada pertanyaan',
         'jika masih ada pertanyaan', 'demikian informasi', 'baik [a-zA-Z]+,',
@@ -1179,8 +1182,19 @@ class ReplyAnalyzer:
             'mohon menunggu', 'koordinasi', 'penjelasan'
         ]
 
+        # --- ML SOLUTION MODEL INTEGRATION ---
+        self.ml_ready = False
+        try:
+            # Load model yang ditraining khusus untuk jawaban
+            self.vectorizer = joblib.load('models/answer_tfidf.pkl')
+            self.model = joblib.load('models/answer_model.pkl')
+            self.ml_ready = True
+            print("   🤖 ML Solution Model Loaded: Siap memvalidasi jawaban operator.")
+        except Exception as e:
+            print(f"   ⚠️ ML Solution Model missing ({e}). Running Rule-Based only.")
+
     def _check_enhanced_customer_leave(self, ticket_df, first_reply_found, final_reply_found, question_time):
-        """Enhanced customer leave detection dengan logika yang lebih akurat"""
+        """Enhanced customer leave detection dengan final_reply_found check"""
         
         # Cari semua automation messages dengan keyword customer leave
         automation_messages = ticket_df[
@@ -1188,11 +1202,9 @@ class ReplyAnalyzer:
             (ticket_df['Message'].str.contains(config.CUSTOMER_LEAVE_KEYWORD, na=False))
         ]
         
-        # PERBAIKAN: Gunakan .empty untuk cek DataFrame
         if automation_messages.empty:
             return False
         
-        # Ambil pesan automation pertama yang mengandung keyword leave
         leave_message = automation_messages.iloc[0]
         leave_time = leave_message['parsed_timestamp']
         
@@ -1201,48 +1213,44 @@ class ReplyAnalyzer:
         # Cari operator greeting sebelum leave message
         operator_greetings = self._find_operator_greetings_before_time(ticket_df, leave_time)
         
-        # PERBAIKAN: Gunakan .empty untuk cek DataFrame
         if operator_greetings.empty:
             print("   ⚠️ No operator greeting found before leave message")
             return False
         
-        # Ambil greeting terakhir sebelum leave
         last_greeting = operator_greetings.iloc[-1]
         greeting_time = last_greeting['parsed_timestamp']
         
         print(f"   👋 Last operator greeting at: {greeting_time}")
         print(f"   ⏱️  Time gap: {(leave_time - greeting_time).total_seconds() / 60:.1f} minutes")
         
-        # Cek apakah ada interaksi customer setelah greeting dan sebelum leave
-        customer_interactions = self._find_customer_interactions_after_greeting(
-            ticket_df, greeting_time, leave_time
-        )
-        
-        # Cek apakah ada interaksi operator setelah greeting dan sebelum leave
-        operator_interactions = self._find_operator_interactions_after_greeting(
-            ticket_df, greeting_time, leave_time
-        )
+        # Cek interaksi
+        customer_interactions = self._find_customer_interactions_after_greeting(ticket_df, greeting_time, leave_time)
+        operator_interactions = self._find_operator_interactions_after_greeting(ticket_df, greeting_time, leave_time)
         
         print(f"   💬 Customer interactions after greeting: {len(customer_interactions)}")
         print(f"   👨‍💼 Operator interactions after greeting: {len(operator_interactions)}")
+        print(f"   ✅ Final reply found: {final_reply_found}")
         
-        # **LOGIKA UTAMA: Hanya dianggap customer leave jika:**
-        # 1. Ada operator greeting
-        # 2. TIDAK ADA interaksi customer setelah greeting
-        # 3. TIDAK ADA interaksi operator meaningful setelah greeting (selain mungkin greeting ulang)
-        # 4. Ada automation leave message
-        
+        # 🎯 LOGIKA UTAMA YANG DIPERBAIKI:
         is_true_leave = (
             len(customer_interactions) == 0 and 
             len(operator_interactions) == 0 and
-            not operator_greetings.empty  # PERBAIKAN: Gunakan .empty
+            not final_reply_found and  # 🆕 TAMBAHAN INI!
+            not operator_greetings.empty
         )
         
         if is_true_leave:
-            print("   ✅ TRUE CUSTOMER LEAVE: No interactions after operator greeting")
+            print("   🚨 TRUE CUSTOMER LEAVE: No interactions + No final reply")
         else:
-            print("   ❌ NOT customer leave: Found interactions after greeting")
-            
+            if final_reply_found:
+                print("   ✅ NOT customer leave: Final reply found")
+            elif len(customer_interactions) > 0:
+                print("   ✅ NOT customer leave: Customer interacted")
+            elif len(operator_interactions) > 0:
+                print("   ✅ NOT customer leave: Operator interacted")
+            else:
+                print("   ❌ Other reason")
+                
         return is_true_leave
 
     def _find_operator_greetings_before_time(self, ticket_df, target_time):
@@ -1529,77 +1537,83 @@ class ReplyAnalyzer:
         
         return analysis_result
 
+    def _get_ml_solution_similarity(self, text):
+        """Cek kemiripan balasan operator dengan database kunci jawaban"""
+        if not self.ml_ready or not text or len(text.split()) < 5:
+            return 0
+        try:
+            vector = self.vectorizer.transform([text])
+            distances, _ = self.model.kneighbors(vector)
+            similarity = 1 - distances[0][0] # Convert distance to similarity
+            return similarity
+        except:
+            return 0
+
     def _find_enhanced_solution_reply(self, ticket_df, question_time):
-        """Enhanced method untuk mencari solution reply - LEBIH FLEKSIBEL"""
-        operator_messages = ticket_df[
-            (ticket_df['parsed_timestamp'] > question_time) &
-            (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
-        ].sort_values('parsed_timestamp')
-        
-        # PERBAIKAN: Gunakan .empty untuk cek DataFrame
-        if operator_messages.empty:
+            """
+            Enhanced method: Gabungan Rule-Based Keyword + ML Semantic Matching
+            """
+            operator_messages = ticket_df[
+                (ticket_df['parsed_timestamp'] > question_time) &
+                (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
+            ].sort_values('parsed_timestamp')
+            
+            if operator_messages.empty:
+                return None
+            
+            solution_candidates = []
+            
+            for _, msg in operator_messages.iterrows():
+                message_text = str(msg['Message'])
+                message_lower = message_text.lower()
+                
+                # Filter sampah dasar (System log, closing, greeting pendek)
+                if (self._is_system_message(message_text) or 
+                    any(c in message_lower for c in config.CLOSING_PATTERNS) or
+                    self._is_weak_greeting(message_text)):
+                    continue
+                
+                # --- HYBRID DETECTION LOGIC ---
+                
+                # 1. Cek Rule-Based (Keyword)
+                has_keyword = self._contains_solution_keyword_extended(message_text)
+                
+                # 2. Cek ML Based (Semantic Similarity)
+                ml_score = self._get_ml_solution_similarity(message_text)
+                is_ml_match = ml_score > 0.65  # Threshold: 65% mirip dengan kunci jawaban
+                
+                if is_ml_match:
+                    print(f"      🤖 ML Solution Match! (Sim: {ml_score:.2f}) -> '{message_text[:30]}...'")
+
+                # Kriteria Penerimaan: Ada Keyword ATAU Mirip Kunci Jawaban (ML)
+                # Syarat tambahan: Panjang minimal tetap berlaku untuk menghindari false positive pendek
+                is_valid_candidate = (has_keyword or is_ml_match) and len(message_text.split()) >= 5
+                
+                if is_valid_candidate:
+                    lt = (msg['parsed_timestamp'] - question_time).total_seconds()
+                    
+                    # Tentukan catatan deteksinya
+                    detection_note = 'Rule-based keyword'
+                    if is_ml_match and has_keyword: detection_note = 'Strong Match (Keyword + ML)'
+                    elif is_ml_match: detection_note = 'ML Semantic Match (No keyword)'
+                    
+                    solution_candidates.append({
+                        'message': message_text,
+                        'timestamp': msg['parsed_timestamp'],
+                        'lead_time_seconds': lt,
+                        'lead_time_minutes': round(lt/60, 2),
+                        'lead_time_hhmmss': self._seconds_to_hhmmss(lt),
+                        'note': detection_note,
+                        'score': ml_score if is_ml_match else 0.5 # Prioritaskan ML match saat sorting
+                    })
+            
+            # Ambil kandidat terbaik
+            if solution_candidates:
+                # Sort berdasarkan score ML tertinggi, lalu waktu tercepat
+                solution_candidates.sort(key=lambda x: (-x['score'], x['lead_time_seconds']))
+                return solution_candidates[0]
+            
             return None
-        
-        # Cari semua kandidat balasan yang meaningful
-        solution_candidates = []
-        
-        for _, msg in operator_messages.iterrows():
-            message_text = str(msg['Message'])
-            message_lower = message_text.lower()
-            
-            # Skip system messages
-            if self._is_system_message(message_text):
-                continue
-                
-            # Skip closing/greeting patterns
-            if any(c in message_lower for c in config.CLOSING_PATTERNS):
-                continue
-                
-            # Skip jika hanya greeting singkat
-            if self._is_weak_greeting(message_text):
-                continue
-            
-            # PERBAIKAN: Gunakan extended solution keywords
-            has_solution = self._contains_solution_keyword_extended(message_text)
-            is_long_enough = len(message_text.split()) >= 5  # Minimal 5 kata
-            has_useful_info = len(message_text.strip()) >= 20  # Minimal 20 karakter
-            
-            # Jika memenuhi kriteria, tambahkan sebagai kandidat
-            if has_solution and is_long_enough and has_useful_info:
-                lt = (msg['parsed_timestamp'] - question_time).total_seconds()
-                solution_candidates.append({
-                    'message': message_text,
-                    'timestamp': msg['parsed_timestamp'],
-                    'lead_time_seconds': lt,
-                    'lead_time_minutes': round(lt/60, 2),
-                    'lead_time_hhmmss': self._seconds_to_hhmmss(lt),
-                    'note': 'Enhanced solution detection'
-                })
-        
-        # Ambil balasan pertama yang memenuhi kriteria
-        if solution_candidates:
-            return solution_candidates[0]
-        
-        # Fallback: Ambil balasan operator pertama yang meaningful
-        for _, msg in operator_messages.iterrows():
-            message_text = str(msg['Message'])
-            
-            if (not self._is_system_message(message_text) and 
-                not any(c in message_text.lower() for c in config.CLOSING_PATTERNS) and
-                not self._is_weak_greeting(message_text) and
-                len(message_text.strip()) >= 15):
-                
-                lt = (msg['parsed_timestamp'] - question_time).total_seconds()
-                return {
-                    'message': message_text,
-                    'timestamp': msg['parsed_timestamp'],
-                    'lead_time_seconds': lt,
-                    'lead_time_minutes': round(lt/60, 2),
-                    'lead_time_hhmmss': self._seconds_to_hhmmss(lt),
-                    'note': 'Fallback: First meaningful operator reply'
-                }
-        
-        return None
 
     def _contains_solution_keyword_extended(self, message):
         """Cek solution keyword dengan daftar yang diperluas"""
@@ -2306,7 +2320,3 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
-
-
-
-
