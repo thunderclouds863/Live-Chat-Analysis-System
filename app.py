@@ -201,29 +201,31 @@ def main_interface():
         else:
             st.warning("⚠️ Please upload both files to start analysis")
         
-        st.markdown("---")
-        st.markdown("### 📖 How to Use")
-        st.info("""
-        **🤖 Hybrid Intelligence Engine Features**
+            st.markdown("---")
+            st.markdown("### 📖 How to Use")
 
-        **🧠 Core AI & Algorithms**
-        • Hybrid Architecture: Combines Rule-Based Keywords (precision) with Machine Learning (flexibility)
-        • Semantic Matching: Uses TF-IDF Vectorization & Cosine Similarity for semantic understanding  
-        • Golden Answer Validation: Measures similarity against Ground Truth dataset
-
-        **🔍 Advanced Detection Logic**
-        • Smart Role & Bot Filtering: Removes bot navigation commands
-        • Intent Scoring System: Combines Keyword Urgency + ML Confidence
-
-        **📈 Performance Metrics**
-        • First & Final Reply Compliance: Validates operator response quality
-        • Enhanced Customer Leave: Detects true abandonment vs waiting
-        • Quality Scoring (0-6): Automated 6-point assessment
-
-        **🛡️ System Robustness**
-        • Fail-Safe Mechanism: Falls back to Rule-Based mode if ML fails
-        • Multi-Format Support: Handles .xlsx with Complaint matching
-        """, icon="ℹ️")
+            with st.expander("🤖 Hybrid Intelligence Engine Features", expanded=True):
+                # Manual formatting untuk setiap line
+                st.markdown("**🧠 Core AI & Algorithms**")
+                st.markdown("• **Hybrid Architecture:** Combines Rule-Based Keywords (precision) with Machine Learning (flexibility)")
+                st.markdown("• **Semantic Matching:** Uses TF-IDF Vectorization & Cosine Similarity for semantic understanding")  
+                st.markdown("• **Golden Answer Validation:** Measures similarity against Ground Truth dataset")
+                st.markdown("")
+                
+                st.markdown("**🔍 Advanced Detection Logic**")
+                st.markdown("• **Smart Role & Bot Filtering:** Removes bot navigation commands")
+                st.markdown("• **Intent Scoring System:** Combines Keyword Urgency + ML Confidence")
+                st.markdown("")
+                
+                st.markdown("**📈 Performance Metrics**")
+                st.markdown("• **First & Final Reply Compliance:** Validates operator response quality")
+                st.markdown("• **Enhanced Customer Leave:** Detects true abandonment vs waiting")
+                st.markdown("• **Quality Scoring (0-6):** Automated 6-point assessment")
+                st.markdown("")
+                
+                st.markdown("**🛡️ System Robustness**")
+                st.markdown("• **Fail-Safe Mechanism:** Falls back to Rule-Based mode if ML fails")
+                st.markdown("• **Multi-Format Support:** Handles .xlsx with Complaint matching")
     
     # Main content area
     if uploaded_raw_file is not None and uploaded_complaint_file is not None:
@@ -1537,7 +1539,6 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
-
 
 
 
