@@ -1120,7 +1120,7 @@ def display_issue_types_tab(results, stats):
             final_reply_rate = (data['final_reply_found'] / data['count']) * 100
             
             summary_data.append({
-                'Inquiry Type': issue_type.upper(),
+                'Issue Type': issue_type.upper(),
                 'Count': data['count'],
                 'Avg Quality Score': f"{avg_quality:.1f}",
                 'First Reply Rate': f"{first_reply_rate:.1f}%",
@@ -1143,7 +1143,7 @@ def display_issue_types_tab(results, stats):
             
             display_data.append({
                 'Ticket ID': result['ticket_id'],
-                'Inquiry Type': result['final_issue_type'].upper(),
+                'Issue Type': result['final_issue_type'].upper(),
                 'Main Question': result['main_question'][:80] + '...',
                 'First Reply': '✅' if result['first_reply_found'] else '❌',
                 'Final Reply': '✅' if result['final_reply_found'] else '❌',
@@ -1540,6 +1540,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
