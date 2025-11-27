@@ -1407,7 +1407,7 @@ class ReplyAnalyzer:
             'issue_type': 'complaint',
             'first_reply': first_reply,
             'final_reply': {
-                'message': 'COMPLAINT_RESOLUTION',
+                'message': 'Check Complaint Report for More Information',
                 'timestamp': None,
                 'lead_time_minutes': None,
                 'lead_time_days': complaint_data.get('lead_time_days'),
@@ -2306,6 +2306,7 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
 
