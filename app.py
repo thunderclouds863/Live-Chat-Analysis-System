@@ -760,199 +760,199 @@ def display_enhanced_lead_time_tab(results, stats):
     with col4:
         st.metric("Final Reply Samples", lead_time_stats['final_samples'])
 
-# 2. BREAKDOWN PER Inquiry Type (SEMUA DISATUKAN)
-st.markdown("### 📈 Lead Time Breakdown by Inquiry Type")
-
-def minutes_to_dd_hh_mm_ss(minutes):
-    """Convert minutes to dd:hh:mm:ss format"""
-    if minutes is None or minutes < 0:
-        return "00:00:00:00"
+    # 2. BREAKDOWN PER Inquiry Type (SEMUA DISATUKAN)
+    st.markdown("### 📈 Lead Time Breakdown by Inquiry Type")
     
-    # Calculate days, hours, minutes, seconds
-    total_seconds = int(minutes * 60)
+    def minutes_to_dd_hh_mm_ss(minutes):
+        """Convert minutes to dd:hh:mm:ss format"""
+        if minutes is None or minutes < 0:
+            return "00:00:00:00"
+        
+        # Calculate days, hours, minutes, seconds
+        total_seconds = int(minutes * 60)
+        
+        days = total_seconds // (24 * 3600)
+        remaining_seconds = total_seconds % (24 * 3600)
+        
+        hours = remaining_seconds // 3600
+        remaining_seconds %= 3600
+        
+        mins = remaining_seconds // 60
+        secs = remaining_seconds % 60
+        
+        # Format dengan leading zeros
+        return f"{days:02d}:{hours:02d}:{mins:02d}:{secs:02d}"
     
-    days = total_seconds // (24 * 3600)
-    remaining_seconds = total_seconds % (24 * 3600)
+    def format_lead_time_flexible(minutes):
+        """Format lead time dengan prioritas days:hh:mm:ss, fallback ke format lain jika perlu"""
+        if minutes is None:
+            return "N/A"
+        
+        # Untuk nilai sangat kecil (< 1 menit), tetap tampilkan dalam detik
+        if minutes < 1/60:  # kurang dari 1 detik
+            seconds = int(minutes * 60)
+            return f"00:00:00:{seconds:02d}"
+        
+        # Gunakan format dd:hh:mm:ss untuk semua kasus
+        return minutes_to_dd_hh_mm_ss(minutes)
     
-    hours = remaining_seconds // 3600
-    remaining_seconds %= 3600
-    
-    mins = remaining_seconds // 60
-    secs = remaining_seconds % 60
-    
-    # Format dengan leading zeros
-    return f"{days:02d}:{hours:02d}:{mins:02d}:{secs:02d}"
-
-def format_lead_time_flexible(minutes):
-    """Format lead time dengan prioritas days:hh:mm:ss, fallback ke format lain jika perlu"""
-    if minutes is None:
-        return "N/A"
-    
-    # Untuk nilai sangat kecil (< 1 menit), tetap tampilkan dalam detik
-    if minutes < 1/60:  # kurang dari 1 detik
-        seconds = int(minutes * 60)
-        return f"00:00:00:{seconds:02d}"
-    
-    # Gunakan format dd:hh:mm:ss untuk semua kasus
-    return minutes_to_dd_hh_mm_ss(minutes)
-
-lead_time_by_type = {}
-for result in successful:
-    issue_type = result['final_issue_type']
-    if issue_type not in lead_time_by_type:
-        lead_time_by_type[issue_type] = {
-            'first_lead_times': [],
-            'final_lead_times_minutes': []  # Semua dalam minutes
-        }
-    
-    # First reply lead times
-    first_lt = result.get('first_reply_lead_time_minutes')
-    if first_lt is not None and first_lt != 'N/A':
-        try:
-            first_lt_float = float(first_lt)
-            if first_lt_float > 0:
-                lead_time_by_type[issue_type]['first_lead_times'].append(first_lt_float)
-        except (ValueError, TypeError):
-            pass
-    
-    # Final reply lead times - Convert SEMUA ke minutes
-    final_lt_minutes = None
-    if issue_type == 'complaint':
-        final_lt_days = result.get('final_reply_lead_time_days')
-        if final_lt_days is not None and final_lt_days != 'N/A':
+    lead_time_by_type = {}
+    for result in successful:
+        issue_type = result['final_issue_type']
+        if issue_type not in lead_time_by_type:
+            lead_time_by_type[issue_type] = {
+                'first_lead_times': [],
+                'final_lead_times_minutes': []  # Semua dalam minutes
+            }
+        
+        # First reply lead times
+        first_lt = result.get('first_reply_lead_time_minutes')
+        if first_lt is not None and first_lt != 'N/A':
             try:
-                final_lt_minutes = float(final_lt_days) * 24 * 60  # Convert days to minutes
+                first_lt_float = float(first_lt)
+                if first_lt_float > 0:
+                    lead_time_by_type[issue_type]['first_lead_times'].append(first_lt_float)
             except (ValueError, TypeError):
                 pass
-    else:
-        final_lt_min = result.get('final_reply_lead_time_minutes')
-        if final_lt_min is not None and final_lt_min != 'N/A':
-            try:
-                final_lt_minutes = float(final_lt_min)
-            except (ValueError, TypeError):
-                pass
+        
+        # Final reply lead times - Convert SEMUA ke minutes
+        final_lt_minutes = None
+        if issue_type == 'complaint':
+            final_lt_days = result.get('final_reply_lead_time_days')
+            if final_lt_days is not None and final_lt_days != 'N/A':
+                try:
+                    final_lt_minutes = float(final_lt_days) * 24 * 60  # Convert days to minutes
+                except (ValueError, TypeError):
+                    pass
+        else:
+            final_lt_min = result.get('final_reply_lead_time_minutes')
+            if final_lt_min is not None and final_lt_min != 'N/A':
+                try:
+                    final_lt_minutes = float(final_lt_min)
+                except (ValueError, TypeError):
+                    pass
+        
+        if final_lt_minutes is not None and final_lt_minutes > 0:
+            lead_time_by_type[issue_type]['final_lead_times_minutes'].append(final_lt_minutes)
     
-    if final_lt_minutes is not None and final_lt_minutes > 0:
-        lead_time_by_type[issue_type]['final_lead_times_minutes'].append(final_lt_minutes)
-
-# Display breakdown table dengan format dd:hh:mm:ss
-breakdown_data = []
-for issue_type, data in lead_time_by_type.items():
-    # First reply average
-    first_avg = None
-    if data['first_lead_times']:
-        try:
-            first_avg_minutes = np.mean(data['first_lead_times'])
-            first_avg = format_lead_time_flexible(first_avg_minutes)
-        except:
-            first_avg = 'N/A'
-    else:
-        first_avg = 'N/A'
-    
-    # Final reply average
-    final_avg = None
-    if data['final_lead_times_minutes']:
-        try:
-            final_avg_minutes = np.mean(data['final_lead_times_minutes'])
-            final_avg = format_lead_time_flexible(final_avg_minutes)
-        except:
-            final_avg = 'N/A'
-    else:
-        final_avg = 'N/A'
-    
-    # Hitung juga median untuk insight tambahan
-    first_median = None
-    if data['first_lead_times']:
-        try:
-            first_median_minutes = np.median(data['first_lead_times'])
-            first_median = format_lead_time_flexible(first_median_minutes)
-        except:
-            first_median = 'N/A'
-    
-    final_median = None
-    if data['final_lead_times_minutes']:
-        try:
-            final_median_minutes = np.median(data['final_lead_times_minutes'])
-            final_median = format_lead_time_flexible(final_median_minutes)
-        except:
-            final_median = 'N/A'
-    
-    breakdown_data.append({
-        'Inquiry Type': issue_type.upper(),
-        'First Reply Avg': first_avg,
-        'First Reply Median': first_median if first_median else 'N/A',
-        'Final Reply Avg': final_avg,
-        'Final Reply Median': final_median if final_median else 'N/A',
-        'Samples': len(data['first_lead_times'])
-    })
-
-if breakdown_data:
-    df_breakdown = pd.DataFrame(breakdown_data)
-    
-    # Sort by Inquiry Type
-    df_breakdown = df_breakdown.sort_values('Inquiry Type')
-    
-    # Format untuk tampilan lebih baik
-    st.dataframe(
-        df_breakdown.style.format({
-            'First Reply Avg': lambda x: f"📊 {x}" if x != 'N/A' else x,
-            'Final Reply Avg': lambda x: f"🎯 {x}" if x != 'N/A' else x,
-            'First Reply Median': lambda x: f"📈 {x}" if x != 'N/A' else x,
-            'Final Reply Median': lambda x: f"📉 {x}" if x != 'N/A' else x,
-        }),
-        use_container_width=True
-    )
-    
-    # Tambahkan penjelasan format
-    st.caption("📝 **Format:** dd:hh:mm:ss (Hari:Jam:Menit:Detik)")
-    
-    # Contoh format untuk clarity
-    with st.expander("ℹ️ Contoh Format Waktu"):
-        st.markdown("""
-        | Format | Arti | Contoh |
-        |--------|------|--------|
-        | 00:00:05:23 | 0 hari, 0 jam, 5 menit, 23 detik | 5 menit 23 detik |
-        | 00:01:30:00 | 0 hari, 1 jam, 30 menit, 0 detik | 1 jam 30 menit |
-        | 01:12:15:45 | 1 hari, 12 jam, 15 menit, 45 detik | 1 hari 12 jam |
-        | 00:00:00:45 | 0 hari, 0 jam, 0 menit, 45 detik | 45 detik |
-        """)
-else:
-    st.info("No lead time data available for breakdown")
-
-# Optional: Tambahkan summary statistics
-st.markdown("### 📊 Summary Statistics")
-
-if lead_time_by_type:
-    # Hitung overall averages
-    all_first_times = []
-    all_final_times = []
-    
+    # Display breakdown table dengan format dd:hh:mm:ss
+    breakdown_data = []
     for issue_type, data in lead_time_by_type.items():
-        all_first_times.extend(data['first_lead_times'])
-        all_final_times.extend(data['final_lead_times_minutes'])
+        # First reply average
+        first_avg = None
+        if data['first_lead_times']:
+            try:
+                first_avg_minutes = np.mean(data['first_lead_times'])
+                first_avg = format_lead_time_flexible(first_avg_minutes)
+            except:
+                first_avg = 'N/A'
+        else:
+            first_avg = 'N/A'
+        
+        # Final reply average
+        final_avg = None
+        if data['final_lead_times_minutes']:
+            try:
+                final_avg_minutes = np.mean(data['final_lead_times_minutes'])
+                final_avg = format_lead_time_flexible(final_avg_minutes)
+            except:
+                final_avg = 'N/A'
+        else:
+            final_avg = 'N/A'
+        
+        # Hitung juga median untuk insight tambahan
+        first_median = None
+        if data['first_lead_times']:
+            try:
+                first_median_minutes = np.median(data['first_lead_times'])
+                first_median = format_lead_time_flexible(first_median_minutes)
+            except:
+                first_median = 'N/A'
+        
+        final_median = None
+        if data['final_lead_times_minutes']:
+            try:
+                final_median_minutes = np.median(data['final_lead_times_minutes'])
+                final_median = format_lead_time_flexible(final_median_minutes)
+            except:
+                final_median = 'N/A'
+        
+        breakdown_data.append({
+            'Inquiry Type': issue_type.upper(),
+            'First Reply Avg': first_avg,
+            'First Reply Median': first_median if first_median else 'N/A',
+            'Final Reply Avg': final_avg,
+            'Final Reply Median': final_median if final_median else 'N/A',
+            'Samples': len(data['first_lead_times'])
+        })
     
-    if all_first_times:
-        overall_first_avg = format_lead_time_flexible(np.mean(all_first_times))
-        overall_first_median = format_lead_time_flexible(np.median(all_first_times))
+    if breakdown_data:
+        df_breakdown = pd.DataFrame(breakdown_data)
+        
+        # Sort by Inquiry Type
+        df_breakdown = df_breakdown.sort_values('Inquiry Type')
+        
+        # Format untuk tampilan lebih baik
+        st.dataframe(
+            df_breakdown.style.format({
+                'First Reply Avg': lambda x: f"📊 {x}" if x != 'N/A' else x,
+                'Final Reply Avg': lambda x: f"🎯 {x}" if x != 'N/A' else x,
+                'First Reply Median': lambda x: f"📈 {x}" if x != 'N/A' else x,
+                'Final Reply Median': lambda x: f"📉 {x}" if x != 'N/A' else x,
+            }),
+            use_container_width=True
+        )
+        
+        # Tambahkan penjelasan format
+        st.caption("📝 **Format:** dd:hh:mm:ss (Hari:Jam:Menit:Detik)")
+        
+        # Contoh format untuk clarity
+        with st.expander("ℹ️ Contoh Format Waktu"):
+            st.markdown("""
+            | Format | Arti | Contoh |
+            |--------|------|--------|
+            | 00:00:05:23 | 0 hari, 0 jam, 5 menit, 23 detik | 5 menit 23 detik |
+            | 00:01:30:00 | 0 hari, 1 jam, 30 menit, 0 detik | 1 jam 30 menit |
+            | 01:12:15:45 | 1 hari, 12 jam, 15 menit, 45 detik | 1 hari 12 jam |
+            | 00:00:00:45 | 0 hari, 0 jam, 0 menit, 45 detik | 45 detik |
+            """)
     else:
-        overall_first_avg = overall_first_median = 'N/A'
+        st.info("No lead time data available for breakdown")
     
-    if all_final_times:
-        overall_final_avg = format_lead_time_flexible(np.mean(all_final_times))
-        overall_final_median = format_lead_time_flexible(np.median(all_final_times))
-    else:
-        overall_final_avg = overall_final_median = 'N/A'
+    # Optional: Tambahkan summary statistics
+    st.markdown("### 📊 Summary Statistics")
     
-    # Tampilkan dalam columns
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.metric("Overall First Reply Avg", overall_first_avg)
-        st.metric("Overall First Reply Median", overall_first_median)
-    
-    with col2:
-        st.metric("Overall Final Reply Avg", overall_final_avg)
-        st.metric("Overall Final Reply Median", overall_final_median)
+    if lead_time_by_type:
+        # Hitung overall averages
+        all_first_times = []
+        all_final_times = []
+        
+        for issue_type, data in lead_time_by_type.items():
+            all_first_times.extend(data['first_lead_times'])
+            all_final_times.extend(data['final_lead_times_minutes'])
+        
+        if all_first_times:
+            overall_first_avg = format_lead_time_flexible(np.mean(all_first_times))
+            overall_first_median = format_lead_time_flexible(np.median(all_first_times))
+        else:
+            overall_first_avg = overall_first_median = 'N/A'
+        
+        if all_final_times:
+            overall_final_avg = format_lead_time_flexible(np.mean(all_final_times))
+            overall_final_median = format_lead_time_flexible(np.median(all_final_times))
+        else:
+            overall_final_avg = overall_final_median = 'N/A'
+        
+        # Tampilkan dalam columns
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("Overall First Reply Avg", overall_first_avg)
+            st.metric("Overall First Reply Median", overall_first_median)
+        
+        with col2:
+            st.metric("Overall Final Reply Avg", overall_final_avg)
+            st.metric("Overall Final Reply Median", overall_final_median)
 
     # 3. DISTRIBUTION ANALYSIS - FIRST REPLY
     st.markdown("### 📊 First Reply Lead Time Distribution - All Cases")
@@ -1652,4 +1652,5 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
