@@ -108,6 +108,39 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ========== FUNGSI FORMAT LEAD TIME UNTUK SEMUA TAB ==========
+def minutes_to_dd_hh_mm_ss(minutes):
+    """Convert minutes to dd:hh:mm:ss format"""
+    if minutes is None or minutes < 0:
+        return "00:00:00:00"
+    
+    total_seconds = int(minutes * 60)
+    
+    days = total_seconds // (24 * 3600)
+    remaining_seconds = total_seconds % (24 * 3600)
+    
+    hours = remaining_seconds // 3600
+    remaining_seconds %= 3600
+    
+    mins = remaining_seconds // 60
+    secs = remaining_seconds % 60
+    
+    return f"{days:02d}:{hours:02d}:{mins:02d}:{secs:02d}"
+
+def format_lead_time(minutes):
+    """Format lead time ke dd:hh:mm:ss"""
+    if minutes is None:
+        return "N/A"
+    
+    try:
+        minutes_float = float(minutes)
+        if minutes_float <= 0:
+            return "00:00:00:00"
+        
+        return minutes_to_dd_hh_mm_ss(minutes_float)
+    except (ValueError, TypeError):
+        return "N/A"
+
 def main_interface():
     """Main interface dengan upload dua file"""
     st.markdown('<h1 class="main-header">🤖 Live Chat Analysis</h1>', unsafe_allow_html=True)
@@ -561,27 +594,6 @@ def _is_valid_lead_time(value):
     except (ValueError, TypeError):
         return False
     
-def format_lead_time(minutes):
-    """Format lead time berdasarkan durasi: minutes, hours, atau days"""
-    if minutes is None or minutes == 'N/A':
-        return "N/A"
-    
-    try:
-        minutes_float = float(minutes)
-        if minutes_float <= 0:
-            return "N/A"
-        
-        if minutes_float > 1440:  # > 1 day
-            days = minutes_float / 1440
-            return f"{days:.1f} days"
-        elif minutes_float > 60:  # > 1 hour
-            hours = minutes_float / 60
-            return f"{hours:.1f} hours"
-        else:
-            return f"{minutes_float:.1f} min"
-    except (ValueError, TypeError):
-        return "N/A"
-        
 def display_professional_overview_tab(results, stats):
     """Display professional overview tab dengan rangkuman penting - DIPERBAIKI"""
     st.markdown("## 📊 Performance Overview")
@@ -739,7 +751,7 @@ def display_enhanced_lead_time_tab(results, stats):
     
     successful = [r for r in results if r['status'] == 'success']
     
-    # 1. SUMMARY TOTAL - Convert semua ke menit dulu
+    # 1. SUMMARY TOTAL
     st.markdown("### 📊 Overall Lead Time Summary")
     
     lead_time_stats = calculate_lead_time_stats(results)
@@ -762,38 +774,6 @@ def display_enhanced_lead_time_tab(results, stats):
 
     # 2. BREAKDOWN PER Inquiry Type (SEMUA DISATUKAN)
     st.markdown("### 📈 Lead Time Breakdown by Inquiry Type")
-    
-    def minutes_to_dd_hh_mm_ss(minutes):
-        """Convert minutes to dd:hh:mm:ss format"""
-        if minutes is None or minutes < 0:
-            return "00:00:00:00"
-        
-        total_seconds = int(minutes * 60)
-        
-        days = total_seconds // (24 * 3600)
-        remaining_seconds = total_seconds % (24 * 3600)
-        
-        hours = remaining_seconds // 3600
-        remaining_seconds %= 3600
-        
-        mins = remaining_seconds // 60
-        secs = remaining_seconds % 60
-        
-        return f"{days:02d}:{hours:02d}:{mins:02d}:{secs:02d}"
-    
-    def format_lead_time(minutes):
-        """Format lead time ke dd:hh:mm:ss"""
-        if minutes is None:
-            return "N/A"
-        
-        try:
-            minutes_float = float(minutes)
-            if minutes_float <= 0:
-                return "00:00:00:00"
-            
-            return minutes_to_dd_hh_mm_ss(minutes_float)
-        except (ValueError, TypeError):
-            return "N/A"
     
     lead_time_by_type = {}
     for result in successful:
@@ -874,8 +854,8 @@ def display_enhanced_lead_time_tab(results, stats):
     else:
         st.info("No lead time data available for breakdown")
 
-    # 3. DISTRIBUTION ANALYSIS - FIRST REPLY
-    st.markdown("### 📊 First Reply Lead Time Distribution - All Cases")
+    # 3. DISTRIBUTION ANALYSIS - FIRST REPLY (VERSI SIMPLE)
+    st.markdown("### 📊 First Reply Lead Time Distribution")
     
     # Kumpulkan semua first reply lead times
     first_reply_data = []
@@ -888,7 +868,6 @@ def display_enhanced_lead_time_tab(results, stats):
                     first_reply_data.append({
                         'Inquiry Type': result['final_issue_type'].upper(),
                         'Lead Time (minutes)': first_lt_float,
-                        'Lead Time (hours)': first_lt_float / 60,
                         'Formatted Lead Time': format_lead_time(first_lt_float)
                     })
             except (ValueError, TypeError):
@@ -897,48 +876,27 @@ def display_enhanced_lead_time_tab(results, stats):
     if first_reply_data:
         df_first = pd.DataFrame(first_reply_data)
         
-        col1, col2 = st.columns(2)
+        # Simple statistics
+        st.markdown("#### 📈 First Reply Statistics")
+        first_stats_data = []
+        for issue_type in df_first['Inquiry Type'].unique():
+            issue_data = df_first[df_first['Inquiry Type'] == issue_type]['Lead Time (minutes)']
+            if len(issue_data) > 0:
+                first_stats_data.append({
+                    'Inquiry Type': issue_type,
+                    'Count': len(issue_data),
+                    'Average': format_lead_time(np.mean(issue_data)),
+                    'Median': format_lead_time(np.median(issue_data)),
+                    'Min': format_lead_time(np.min(issue_data)),
+                    'Max': format_lead_time(np.max(issue_data))
+                })
         
-        with col1:
-            # Box plot first reply
-            fig_first_box = px.box(
-                df_first, 
-                x='Inquiry Type', 
-                y='Lead Time (minutes)',
-                title='First Reply Lead Time Distribution (Minutes)',
-                color='Inquiry Type',
-                color_discrete_map={
-                    'NORMAL': '#2E86AB',
-                    'SERIOUS': '#A23B72',
-                    'COMPLAINT': '#F18F01'
-                }
-            )
-            st.plotly_chart(fig_first_box, use_container_width=True)
-        
-        with col2:
-            # Statistics untuk first reply
-            st.markdown("#### 📈 First Reply Statistics")
-            first_stats_data = []
-            for issue_type in df_first['Inquiry Type'].unique():
-                issue_data = df_first[df_first['Inquiry Type'] == issue_type]['Lead Time (minutes)']
-                if len(issue_data) > 0:
-                    first_stats_data.append({
-                        'Inquiry Type': issue_type,
-                        'Count': len(issue_data),
-                        'Average': format_lead_time(np.mean(issue_data)),
-                        'Median': format_lead_time(np.median(issue_data)),
-                        'Min': format_lead_time(np.min(issue_data)),
-                        'Max': format_lead_time(np.max(issue_data))
-                    })
-            
-            if first_stats_data:
-                df_first_stats = pd.DataFrame(first_stats_data)
-                st.dataframe(df_first_stats, use_container_width=True)
-    else:
-        st.info("No first reply lead time data available")
+        if first_stats_data:
+            df_first_stats = pd.DataFrame(first_stats_data)
+            st.dataframe(df_first_stats, use_container_width=True)
 
-    # 4. DISTRIBUTION ANALYSIS - FINAL REPLY
-    st.markdown("### 📊 Final Reply Lead Time Distribution - All Cases")
+    # 4. DISTRIBUTION ANALYSIS - FINAL REPLY (VERSI SIMPLE)
+    st.markdown("### 📊 Final Reply Lead Time Distribution")
     
     # Kumpulkan semua final reply lead times dalam minutes
     final_reply_data = []
@@ -967,87 +925,32 @@ def display_enhanced_lead_time_tab(results, stats):
             final_reply_data.append({
                 'Inquiry Type': result['final_issue_type'].upper(),
                 'Lead Time (minutes)': final_lt_minutes,
-                'Lead Time (hours)': final_lt_minutes / 60,
-                'Lead Time (days)': final_lt_minutes / 1440,
                 'Formatted Lead Time': format_lead_time(final_lt_minutes)
             })
     
     if final_reply_data:
         df_final = pd.DataFrame(final_reply_data)
         
-        col1, col2 = st.columns(2)
+        # Statistics untuk final reply dengan format fleksibel
+        st.markdown("#### 📈 Final Reply Statistics")
+        final_stats_data = []
+        for issue_type in df_final['Inquiry Type'].unique():
+            issue_data = df_final[df_final['Inquiry Type'] == issue_type]['Lead Time (minutes)']
+            if len(issue_data) > 0:
+                final_stats_data.append({
+                    'Inquiry Type': issue_type,
+                    'Count': len(issue_data),
+                    'Average': format_lead_time(np.mean(issue_data)),
+                    'Median': format_lead_time(np.median(issue_data)),
+                    'Min': format_lead_time(np.min(issue_data)),
+                    'Max': format_lead_time(np.max(issue_data))
+                })
         
-        with col1:
-            # Box plot final reply - pilih unit yang paling appropriate
-            # Jika ada data > 1 day, gunakan days, else gunakan hours
-            max_lead_time = df_final['Lead Time (days)'].max()
-            if max_lead_time > 1:
-                y_column = 'Lead Time (days)'
-                y_title = 'Lead Time (days)'
-                title_suffix = 'Days'
-            else:
-                y_column = 'Lead Time (hours)'
-                y_title = 'Lead Time (hours)'
-                title_suffix = 'Hours'
-            
-            fig_final_box = px.box(
-                df_final, 
-                x='Inquiry Type', 
-                y=y_column,
-                title=f'Final Reply Lead Time Distribution ({title_suffix})',
-                color='Inquiry Type',
-                color_discrete_map={
-                    'NORMAL': '#2E86AB',
-                    'SERIOUS': '#A23B72',
-                    'COMPLAINT': '#F18F01'
-                }
-            )
-            fig_final_box.update_layout(yaxis_title=y_title)
-            st.plotly_chart(fig_final_box, use_container_width=True)
-        
-        with col2:
-            # Statistics untuk final reply dengan format fleksibel
-            st.markdown("#### 📈 Final Reply Statistics")
-            final_stats_data = []
-            for issue_type in df_final['Inquiry Type'].unique():
-                issue_data = df_final[df_final['Inquiry Type'] == issue_type]['Lead Time (minutes)']
-                if len(issue_data) > 0:
-                    final_stats_data.append({
-                        'Inquiry Type': issue_type,
-                        'Count': len(issue_data),
-                        'Average': format_lead_time(np.mean(issue_data)),
-                        'Median': format_lead_time(np.median(issue_data)),
-                        'Min': format_lead_time(np.min(issue_data)),
-                        'Max': format_lead_time(np.max(issue_data))
-                    })
-            
-            if final_stats_data:
-                df_final_stats = pd.DataFrame(final_stats_data)
-                st.dataframe(df_final_stats, use_container_width=True)
-        
-        # Additional insight untuk final reply
-        st.markdown("#### 💡 Final Reply Insights")
-        total_final_cases = len(final_reply_data)
-        if total_final_cases > 0:
-            st.write(f"**Total final reply cases analyzed:** {total_final_cases}")
-            
-            # Cari Inquiry Type dengan lead time terpanjang
-            max_lead_time_idx = df_final['Lead Time (minutes)'].idxmax()
-            max_case = df_final.loc[max_lead_time_idx]
-            st.write(f"**Longest resolution:** {max_case['Inquiry Type']} case - {max_case['Formatted Lead Time']}")
-            
-            # Cari Inquiry Type dengan lead time terpendek
-            min_lead_time_idx = df_final['Lead Time (minutes)'].idxmin()
-            min_case = df_final.loc[min_lead_time_idx]
-            st.write(f"**Fastest resolution:** {min_case['Inquiry Type']} case - {min_case['Formatted Lead Time']}")
-            
-            # Rata-rata overall
-            overall_avg = format_lead_time(df_final['Lead Time (minutes)'].mean())
-            st.write(f"**Overall average resolution time:** {overall_avg}")
-    else:
-        st.info("No final reply lead time data available")
+        if final_stats_data:
+            df_final_stats = pd.DataFrame(final_stats_data)
+            st.dataframe(df_final_stats, use_container_width=True)
 
-    # 5. COMPARISON CHART (SEMUA Inquiry Type)
+    # 5. COMPARISON CHART (SEMUA Inquiry Type) - SIMPLE VERSION
     st.markdown("### 📊 Lead Time Comparison - All Inquiry Types")
     
     # Prepare data untuk comparison chart
@@ -1080,41 +983,9 @@ def display_enhanced_lead_time_tab(results, stats):
     if comparison_data:
         df_comparison = pd.DataFrame(comparison_data)
         
-        # Pilih unit yang paling appropriate untuk chart
-        max_lead_time = df_comparison['Average Lead Time (minutes)'].max()
-        if max_lead_time > 1440:  # > 1 day
-            df_comparison['Average Lead Time'] = df_comparison['Average Lead Time (minutes)'] / 1440
-            y_title = 'Average Lead Time (days)'
-        elif max_lead_time > 60:  # > 1 hour
-            df_comparison['Average Lead Time'] = df_comparison['Average Lead Time (minutes)'] / 60
-            y_title = 'Average Lead Time (hours)'
-        else:
-            df_comparison['Average Lead Time'] = df_comparison['Average Lead Time (minutes)']
-            y_title = 'Average Lead Time (minutes)'
-        
-        fig_comparison = px.bar(
-            df_comparison, 
-            x='Inquiry Type', 
-            y='Average Lead Time',
-            color='Reply Type',
-            title=f'Average Lead Time Comparison by Inquiry Type',
-            labels={'Average Lead Time': y_title, 'Inquiry Type': 'Inquiry Type'},
-            barmode='group',
-            color_discrete_map={
-                'First Reply': '#2E86AB',
-                'Final Reply': '#A23B72'
-            }
-        )
-        
-        # Format tooltip untuk menunjukkan formatted time
-        fig_comparison.update_traces(
-            hovertemplate='<b>%{x}</b><br>%{data.name}<br>Average: %{customdata}<extra></extra>',
-            customdata=df_comparison['Formatted Time']
-        )
-        
-        st.plotly_chart(fig_comparison, use_container_width=True)
-    else:
-        st.info("No data available for comparison chart")
+        # Simple table comparison
+        st.dataframe(df_comparison[['Inquiry Type', 'Reply Type', 'Formatted Time']], 
+                    use_container_width=True)
                     
 def display_issue_types_tab(results, stats):
     """Display Inquiry Types analysis"""
@@ -1179,8 +1050,8 @@ def display_issue_types_tab(results, stats):
                 'Main Question': result['main_question'][:80] + '...',
                 'First Reply': '✅' if result['first_reply_found'] else '❌',
                 'Final Reply': '✅' if result['final_reply_found'] else '❌',
-                'First LT (min)': result.get('first_reply_lead_time_minutes', 'N/A'),
-                'Final LT': _format_lead_time(result),  # PERBAIKAN: panggil function biasa
+                'First LT': result.get('first_reply_lead_time_minutes', 'N/A'),
+                'Final LT': _format_lead_time_for_table(result),
                 'Performance': result['performance_rating'].upper(),
                 'Special Notes': ', '.join(special_notes) if special_notes else '-'
             })
@@ -1201,6 +1072,25 @@ def display_issue_types_tab(results, stats):
                 display_enhanced_ticket_details(selected_result)
     else:
         st.info("No successful analyses to display")
+
+def _format_lead_time_for_table(result):
+    """Format lead time untuk tabel dalam dd:hh:mm:ss"""
+    if result['final_issue_type'] == 'complaint' and result.get('final_reply_lead_time_days'):
+        try:
+            days = float(result['final_reply_lead_time_days'])
+            minutes = days * 24 * 60
+            return format_lead_time(minutes)
+        except:
+            return "N/A"
+    elif result.get('final_reply_lead_time_minutes'):
+        try:
+            minutes = float(result['final_reply_lead_time_minutes'])
+            return format_lead_time(minutes)
+        except:
+            return "N/A"
+    else:
+        return "N/A"
+
 def display_enhanced_ticket_details(result):
     """Display detailed information for a single ticket dengan enhanced info"""
     
@@ -1261,84 +1151,6 @@ def display_enhanced_ticket_details(result):
     with col4:
         answer_rate = (result['answered_pairs'] / result['total_qa_pairs']) * 100 if result['total_qa_pairs'] > 0 else 0
         st.metric("Answer Rate", f"{answer_rate:.1f}%")
-    
-    # Raw Data Access (if available)
-    if st.checkbox("Show Raw Analysis Data"):
-        st.markdown("#### 🔧 Raw Analysis Data")
-        
-        if '_raw_qa_pairs' in result:
-            with st.expander("Q-A Pairs Raw Data"):
-                qa_data = []
-                for i, pair in enumerate(result['_raw_qa_pairs']):
-                    qa_data.append({
-                        'Pair': i + 1,
-                        'Question': pair.get('question', '')[:100] + '...',
-                        'Answered': '✅' if pair.get('is_answered') else '❌',
-                        'Answer': pair.get('answer', '')[:100] + '...' if pair.get('answer') else 'No Answer',
-                        'Lead Time (min)': pair.get('lead_time_minutes', 'N/A')
-                    })
-                st.dataframe(pd.DataFrame(qa_data))
-        
-        if '_raw_reply_analysis' in result:
-            with st.expander("Reply Analysis Details"):
-                reply_analysis = result['_raw_reply_analysis']
-                
-                # PERBAIKAN: Tampilkan dalam format yang lebih readable
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("**Basic Info**")
-                    st.write(f"**Inquiry Type:** {reply_analysis.get('issue_type', 'N/A')}")
-                    st.write(f"**Customer Leave:** {reply_analysis.get('customer_leave', False)}")
-                    st.write(f"**Requirement Compliant:** {reply_analysis.get('requirement_compliant', False)}")
-                
-                with col2:
-                    st.markdown("**Reply Status**")
-                    st.write(f"**First Reply Found:** {reply_analysis.get('first_reply') is not None}")
-                    st.write(f"**Final Reply Found:** {reply_analysis.get('final_reply') is not None}")
-                
-                # First Reply Details
-                if reply_analysis.get('first_reply'):
-                    st.markdown("**First Reply Details**")
-                    first_reply = reply_analysis['first_reply']
-                    st.write(f"Message: {first_reply.get('message', '')[:200]}...")
-                    st.write(f"Lead Time: {first_reply.get('lead_time_minutes', 'N/A')} min")
-                    st.write(f"Note: {first_reply.get('note', 'N/A')}")
-                
-                # Final Reply Details
-                if reply_analysis.get('final_reply'):
-                    st.markdown("**Final Reply Details**")
-                    final_reply = reply_analysis['final_reply']
-                    st.write(f"Message: {final_reply.get('message', '')[:200]}...")
-                    
-                    if final_reply.get('lead_time_days'):
-                        st.write(f"Lead Time: {final_reply.get('lead_time_days')} days")
-                    else:
-                        st.write(f"Lead Time: {final_reply.get('lead_time_minutes', 'N/A')} min")
-                    
-                    st.write(f"Note: {final_reply.get('note', 'N/A')}")
-                
-                # Tampilkan JSON mentah hanya jika diminta
-                if st.checkbox("Show Raw JSON"):
-                    st.json(reply_analysis)
-                
-def _format_lead_time(result):
-    """Format lead time berdasarkan jenis issue - PERBAIKAN: function biasa"""
-    if result['final_issue_type'] == 'complaint' and result.get('final_reply_lead_time_days'):
-        return f"{result['final_reply_lead_time_days']} days"
-    elif result.get('final_reply_lead_time_minutes'):
-        # Convert minutes to days jika lebih dari 1 hari
-        minutes = result['final_reply_lead_time_minutes']
-        if minutes > 1440:  # 24 jam * 60 menit
-            days = minutes / 1440
-            return f"{days:.1f} days"
-        elif minutes > 60:  # lebih dari 1 jam
-            hours = minutes / 60
-            return f"{hours:.1f} hours"
-        else:
-            return f"{minutes:.1f} min"
-    else:
-        return "N/A"
 
 def display_performance_tab(results, stats):
     """Display performance analysis"""
@@ -1405,7 +1217,7 @@ def display_performance_tab(results, stats):
                 'Performance': result['performance_rating'].upper(),
                 'Quality Score': result['quality_score'],
                 'First Reply LT': result.get('first_reply_lead_time_minutes', 'N/A'),
-                'Final Reply LT': _format_lead_time(result),  # PERBAIKAN: panggil function biasa
+                'Final Reply LT': _format_lead_time_for_table(result),
                 'First Reply': '✅' if result['first_reply_found'] else '❌',
                 'Final Reply': '✅' if result['final_reply_found'] else '❌',
                 'Special Notes': ', '.join(special_notes) if special_notes else '-'
@@ -1468,10 +1280,10 @@ def display_raw_data_tab(results):
                 'Inquiry Type': result['final_issue_type'],
                 'First Reply Found': result['first_reply_found'],
                 'First Reply Message': result.get('first_reply_message', '')[:100] + '...' if result.get('first_reply_message') else 'Not found',
-                'First Reply LT (min)': result.get('first_reply_lead_time_minutes'),
+                'First Reply LT': result.get('first_reply_lead_time_minutes'),
                 'Final Reply Found': result['final_reply_found'],
                 'Final Reply Message': result.get('final_reply_message', '')[:100] + '...' if result.get('final_reply_message') else 'Not found',
-                'Final Reply LT': _format_lead_time(result),  # PERBAIKAN: panggil function biasa
+                'Final Reply LT': _format_lead_time_for_table(result),
                 'Performance': result['performance_rating'],
                 'Quality Score': result['quality_score'],
                 'Customer Leave': result['customer_leave'],
@@ -1572,4 +1384,3 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
-
