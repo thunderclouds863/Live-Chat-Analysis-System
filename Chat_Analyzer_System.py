@@ -872,6 +872,9 @@ class ConversationParser:
 import re
 from datetime import timedelta
 
+import re
+from datetime import timedelta
+
 class MainIssueDetector:
     def __init__(self):
         # 1. Keywords Masalah
@@ -880,20 +883,21 @@ class MainIssueDetector:
             'stok', 'mobil saya mogok', 'apa bisa', 'masalah', 'problem', 'error', 
             'gagal', 'tidak bisa', 'kendala', 'gangguan', 'trouble', 'komplain', 
             'keluhan', 'kecewa', 'rusak', 'blank', 'kosong', 'hang', 'lambat', 
-            'eror', 'bug', 'bantu'
+            'eror', 'bug', 'bantu', 'tolong', 'mohon', 'help'
         ]
         
         # 2. Keywords Urgent
         self.urgent_keywords = [
             'mendesak', 'urgent', 'segera', 'penting', 'cepat', 'sekarang',
-            'hari ini', 'besok', 'deadline', 'target', 'asap', 'lekas'
+            'hari ini', 'besok', 'deadline', 'target', 'asap', 'lekas',
+            'secepatnya', 'sekarang juga'
         ]
         
         # 3. Keywords Komplain Keras
         self.complaint_keywords = [
             'komplain', 'kecewa', 'marah', 'protes', 'pengaduan', 'keluhan',
             'sakit hati', 'tidak puas', 'keberatan', 'sangat kecewa', 'anjir', 
-            'bangsat', 'bodoh', 'tolol', 'goblok'
+            'bangsat', 'bodoh', 'tolol', 'goblok', 'sial', 'jelek', 'buruk'
         ]
 
         # 4. Pola Vague (Basa-basi)
@@ -901,7 +905,7 @@ class MainIssueDetector:
             'mau nanya', 'mau tanya', 'boleh tanya', 'saya ingin bertanya', 
             'saya mau tanya', 'halo', 'hai', 'permisi', 'pagi', 'siang', 'sore', 
             'malam', 'test', 'tes', 'ping', 'hallo', 'ok', 'oke', 'baik', 'bro', 
-            'sis', 'kak', 'admin', 'bang'
+            'sis', 'kak', 'admin', 'bang', 'dek', 'mas', 'mbak'
         ]
 
         # 5. Blacklist Kata-kata Bot/Navigasi
@@ -909,49 +913,155 @@ class MainIssueDetector:
             'balik ke main menu', 'main menu', 'others', 'pusat bantuan', 
             'hubungi cs', 'setuju', 'tidak setuju', 'ya', 'tidak', 'live chat', 
             'chat dengan agen', 'menu utama', 'kembali', 'pilihan', 'option',
-            'terima kasih', 'thanks', 'thank you', 'okay', 'siap', 'roger'
+            'terima kasih', 'thanks', 'thank you', 'okay', 'siap', 'roger',
+            'baik terima kasih', 'terimakasih', 'sip', 'oke baik'
         ]
         
         # 6. System/Reopening Messages (untuk di-skip)
         self.system_reopen_patterns = [
             r'ticket.*reopen', r'reopened.*by', r'dibuka.*kembali',
-            r'pesan.*tertutup', r'closed.*message', r'auto.*response',
-            r'system.*notification', r'notifikasi.*sistem', r'chat.*ditutup',
-            r'session.*expired', r'time.*out', r'terima kasih.*telah menghubungi',
-            r'terimakasih.*telah.*menghubungi', r'percakapan.*ditutup'
+            r'dibuka ulang', r'pesan.*tertutup', r'closed.*message', 
+            r'auto.*response', r'system.*notification', r'notifikasi.*sistem', 
+            r'chat.*ditutup', r'session.*expired', r'time.*out', 
+            r'terima kasih.*telah menghubungi', r'terimakasih.*telah.*menghubungi',
+            r'percakapan.*ditutup', r'ticket has been reopened',
+            r'chat.*reopen', r'percakapan.*dibuka.*kembali',
+            r'has been closed', r'telah ditutup', r'this ticket.*closed'
         ]
 
     def _get_detection_reason(self, score):
         """Mapping score ke alasan"""
         reasons = {
-            10: "Urgent problem detected",
-            9: "Complaint detected", 
-            8: "Problem keyword found",
-            7: "Repeated question",
-            6: "Detailed question",
-            5: "Unanswered question",
-            4: "Follow-up question",
-            3: "Query detected",
-            2: "Queue/Greeting detected (Contextual)",
-            1: "Last interaction found (Fallback)",
-            0: "Low confidence detection"
+            10: "Urgent complaint detected",
+            9: "Serious complaint detected", 
+            8: "Urgent problem detected",
+            7: "Problem with complaint tone",
+            6: "Clear problem statement",
+            5: "Problem keyword found",
+            4: "Detailed question/query",
+            3: "Follow-up question",
+            2: "Simple question/greeting",
+            1: "Minimal context message",
+            0: "No issue detected"
         }
         return reasons.get(score, "Unknown score")
+    
+    def _is_pure_reopen_message(self, message):
+        """Cek apakah pesan HANYA berisi reopening notification"""
+        if not message:
+            return False
+            
+        message_lower = str(message).lower().strip()
+        
+        # Exact matches untuk pesan reopening
+        pure_reopen_phrases = [
+            'ticket has been reopened by',
+            'ticket has been reopened',
+            'ticket reopened by',
+            'chat has been reopened',
+            'percakapan telah dibuka kembali',
+            'tiket telah dibuka kembali',
+            'dibuka kembali oleh',
+            'reopened by',
+            'ticket dibuka kembali',
+            'this ticket has been reopened'
+        ]
+        
+        for phrase in pure_reopen_phrases:
+            if phrase in message_lower:
+                return True
+        
+        # Jika pesan sangat pendek dan mengandung kata kunci reopening
+        if len(message_lower.split()) <= 8:
+            reopen_keywords = ['reopen', 'reopened', 'dibuka kembali', 'dibuka ulang']
+            if any(keyword in message_lower for keyword in reopen_keywords):
+                # Tapi pastikan bukan pertanyaan customer
+                if not any(q_word in message_lower for q_word in ['?', 'bisa', 'boleh', 'minta', 'tolong']):
+                    return True
+        
+        return False
+    
+    def _is_system_reopen_message(self, message, role):
+        """Cek apakah pesan adalah system/reopen message"""
+        if not message:
+            return False
+            
+        message_lower = str(message).lower()
+        role_lower = str(role).lower()
+        
+        # Cek pure reopen message pertama (paling penting!)
+        if self._is_pure_reopen_message(message):
+            return True
+        
+        # Cek berdasarkan role
+        system_roles = ['system', 'bot', 'auto', 'notification', 'automatic', 'ai', 'chatbot']
+        if any(sys_role in role_lower for sys_role in system_roles):
+            return True
+        
+        # Cek EXACT PHRASE untuk system messages
+        exact_system_phrases = [
+            'ticket has been reopened by',
+            'this ticket has been reopened',
+            'chat has been closed',
+            'percakapan telah ditutup',
+            'session expired',
+            'time out',
+            'terima kasih telah menghubungi',
+            'terimakasih telah menghubungi'
+        ]
+        
+        for phrase in exact_system_phrases:
+            if phrase in message_lower:
+                return True
+        
+        # Cek berdasarkan content pattern (case-insensitive)
+        for pattern in self.system_reopen_patterns:
+            try:
+                if re.search(pattern, message_lower, re.IGNORECASE):
+                    return True
+            except re.error:
+                continue
+        
+        # Cek jika mengandung kata kunci reopening tanpa konteks pertanyaan
+        if len(message_lower.split()) <= 10:
+            reopen_keywords = ['reopened', 'dibuka kembali', 're-open']
+            message_words = message_lower.split()
+            reopen_word_count = 0
+            
+            for word in message_words:
+                for keyword in reopen_keywords:
+                    if keyword in word:
+                        reopen_word_count += 1
+                        break
+            
+            # Jika sebagian besar kata adalah reopening keywords
+            if reopen_word_count > 0 and reopen_word_count >= len(message_words) / 2:
+                return True
+        
+        return False
     
     def _check_if_reopened_ticket(self, ticket_df):
         """Cek apakah ticket mengandung pesan reopening"""
         if ticket_df is None or ticket_df.empty:
             return False
             
-        reopening_keywords = ['reopen', 'dibuka kembali', 're-opened', 'dibuka ulang', 'reopening']
-        
+        # Cari pesan reopening di dataframe
         for _, row in ticket_df.iterrows():
-            message = str(row['Message']).lower()
-            if any(keyword in message for keyword in reopening_keywords):
-                # Pastikan ini benar pesan sistem, bukan customer bilang "reopen"
-                role = str(row.get('Role', '')).lower()
-                if any(sys_role in role for sys_role in ['system', 'bot', 'auto', 'notif']):
-                    return True
+            message = str(row['Message'])
+            role = str(row.get('Role', ''))
+            
+            if self._is_pure_reopen_message(message):
+                return True
+                
+            # Atau cek dengan metode lengkap
+            if self._is_system_reopen_message(message, role):
+                # Tapi pastikan ini bukan customer yang bilang "reopen"
+                role_lower = role.lower()
+                if any(cust_role in role_lower for cust_role in ['customer', 'user', 'client', 'pengguna']):
+                    # Customer minta reopen, ini valid issue
+                    continue
+                return True
+                
         return False
     
     def _handle_reopened_ticket(self, qa_pairs, ticket_df):
@@ -963,57 +1073,90 @@ class MainIssueDetector:
         """
         print("   🔄 Detected REOPENED ticket - using special logic")
         
-        # Cari timestamp pesan reopening
-        reopening_time = None
-        reopening_message = None
+        # Cari timestamp pesan reopening PERTAMA
+        reopening_times = []
         
         for qa in qa_pairs:
             q_lower = qa['question'].lower()
-            if any(keyword in q_lower for keyword in ['reopen', 'dibuka kembali', 're-opened']):
-                # Cek apakah ini dari sistem (biasanya tidak ada answer)
-                if not qa.get('answer') or qa['answer'] == '':
-                    reopening_time = qa['question_time']
-                    reopening_message = qa['question']
-                    break
+            if self._is_pure_reopen_message(qa['question']):
+                reopening_times.append({
+                    'time': qa['question_time'],
+                    'message': qa['question'],
+                    'is_pure': True
+                })
+            elif self._is_system_reopen_message(qa['question'], ''):
+                reopening_times.append({
+                    'time': qa['question_time'],
+                    'message': qa['question'],
+                    'is_pure': False
+                })
         
         # Juga cek di ticket_df
-        if reopening_time is None and ticket_df is not None:
+        if ticket_df is not None:
             for _, row in ticket_df.iterrows():
-                message = str(row['Message']).lower()
-                if any(keyword in message for keyword in ['reopen', 'dibuka kembali']):
-                    reopening_time = row.get('parsed_timestamp')
-                    reopening_message = row['Message']
-                    break
+                message = str(row['Message'])
+                if self._is_pure_reopen_message(message):
+                    reopening_times.append({
+                        'time': row.get('parsed_timestamp'),
+                        'message': message,
+                        'is_pure': True,
+                        'source': 'ticket_df'
+                    })
         
-        if reopening_time:
-            print(f"   ⏰ Reopening at: {reopening_time} - {reopening_message[:50]}...")
+        if reopening_times:
+            # Sort by time
+            reopening_times.sort(key=lambda x: x['time'] if x['time'] else '')
             
-            # Ambil chat SEBELUM reopening
-            pre_reopen_pairs = [
-                qa for qa in qa_pairs 
-                if qa['question_time'] and qa['question_time'] < reopening_time
-            ]
+            # Ambil reopening time PERTAMA
+            first_reopen = reopening_times[0]
+            reopening_time = first_reopen['time']
+            reopening_message = first_reopen['message']
             
-            # Filter bot navigation
-            pre_reopen_pairs = [
-                qa for qa in pre_reopen_pairs 
-                if not self._is_bot_navigation(qa['question'])
-            ]
+            print(f"   ⏰ First reopening at: {reopening_time} - {reopening_message[:50]}...")
             
-            if pre_reopen_pairs:
-                print(f"   🔍 Found {len(pre_reopen_pairs)} messages BEFORE reopening")
+            if reopening_time:
+                # Ambil chat SEBELUM reopening
+                pre_reopen_pairs = [
+                    qa for qa in qa_pairs 
+                    if qa['question_time'] and qa['question_time'] < reopening_time
+                ]
                 
-                # Coba strict detection dulu
-                main_issue = self._strict_main_issue_detection(pre_reopen_pairs)
-                if main_issue:
-                    main_issue['detection_reason'] = f"Reopened ticket - {main_issue['detection_reason']}"
-                    return main_issue
+                # Filter bot navigation
+                pre_reopen_pairs = [
+                    qa for qa in pre_reopen_pairs 
+                    if not self._is_bot_navigation(qa['question'])
+                ]
                 
-                # Coba relaxed detection
-                main_issue = self._relaxed_main_issue_detection(pre_reopen_pairs)
-                if main_issue:
-                    main_issue['detection_reason'] = f"Reopened ticket - {main_issue['detection_reason']}"
-                    return main_issue
+                if pre_reopen_pairs:
+                    print(f"   🔍 Found {len(pre_reopen_pairs)} messages BEFORE reopening")
+                    
+                    # Coba strict detection dulu
+                    main_issue = self._strict_main_issue_detection(pre_reopen_pairs)
+                    if main_issue:
+                        main_issue['detection_reason'] = f"Reopened ticket - {main_issue['detection_reason']}"
+                        main_issue['is_reopened_ticket'] = True
+                        main_issue['reopening_time'] = reopening_time
+                        return main_issue
+                    
+                    # Coba relaxed detection
+                    main_issue = self._relaxed_main_issue_detection(pre_reopen_pairs)
+                    if main_issue:
+                        main_issue['detection_reason'] = f"Reopened ticket - {main_issue['detection_reason']}"
+                        main_issue['is_reopened_ticket'] = True
+                        main_issue['reopening_time'] = reopening_time
+                        return main_issue
+                    
+                    # Kalau masih ga ketemu, ambil yang terakhir sebelum reopening
+                    last_pre_reopen = pre_reopen_pairs[-1]
+                    return {
+                        'question': last_pre_reopen['question'],
+                        'question_time': last_pre_reopen['question_time'],
+                        'detection_score': 2,
+                        'detection_reason': 'Reopened ticket - Last message before reopening',
+                        'is_reopened_ticket': True,
+                        'reopening_time': reopening_time,
+                        'source_type': 'REOPENED_PRE'
+                    }
         
         print("   ⚠️ Reopening time not found or no pre-reopen messages, using standard logic")
         return None
@@ -1038,8 +1181,9 @@ class MainIssueDetector:
             if self._check_if_reopened_ticket(ticket_df):
                 reopened_result = self._handle_reopened_ticket(qa_pairs, ticket_df)
                 if reopened_result:
+                    print(f"   ✅ Using pre-reopen conversation as main issue")
                     return reopened_result
-                # Jika tidak ditemukan pre-reopen messages, lanjut ke logika normal
+                print("   ⚠️ Reopened ticket but no pre-reopen messages found")
         
         # --- LANGKAH 1: Tentukan Waktu Mulai Operator ---
         conversation_start_time = self._find_conversation_start_time(ticket_df)
@@ -1056,19 +1200,20 @@ class MainIssueDetector:
                 if qa['question_time'] and qa['question_time'] >= conversation_start_time
             ]
             
-            # Filter sampah bot navigation
+            # Filter sampah bot navigation DAN system messages
             post_operator_pairs = [
                 qa for qa in post_operator_pairs 
-                if not self._is_bot_navigation(qa['question'])
+                if not self._is_bot_navigation(qa['question']) and 
+                   not self._is_system_reopen_message(qa['question'], '')
             ]
             
             if post_operator_pairs:
-                print(f"   📝 Found {len(post_operator_pairs)} messages AFTER operator joined")
+                print(f"   📝 Found {len(post_operator_pairs)} valid messages AFTER operator joined")
                 target_qa_pairs = post_operator_pairs
                 source_type = "POST_OP"
             else:
                 # B. Priority 2: Chat Saat ANTRIAN (Queue Buffer 15 Menit)
-                print("   ⚠️ No relevant message after operator. Checking queue buffer (15 mins before)...")
+                print("   ⚠️ No valid message after operator. Checking queue buffer (15 mins before)...")
                 queue_start_time = conversation_start_time - timedelta(minutes=15)
                 
                 queue_pairs = [
@@ -1076,10 +1221,11 @@ class MainIssueDetector:
                     if qa['question_time'] and queue_start_time <= qa['question_time'] < conversation_start_time
                 ]
                 
-                # Filter sampah bot
+                # Filter sampah bot & system
                 queue_pairs = [
                     qa for qa in queue_pairs 
-                    if not self._is_bot_navigation(qa['question'])
+                    if not self._is_bot_navigation(qa['question']) and 
+                       not self._is_system_reopen_message(qa['question'], '')
                 ]
                 
                 if queue_pairs:
@@ -1092,10 +1238,11 @@ class MainIssueDetector:
                     return None 
         else:
             # D. Fallback: Tidak ada operator terdeteksi (Full Bot / Failed Handover)
-            print("   ⚠️ No operator detected. Scanning all pairs excluding bot commands...")
+            print("   ⚠️ No operator detected. Scanning all pairs excluding bot/system commands...")
             target_qa_pairs = [
                 qa for qa in qa_pairs 
-                if not self._is_bot_navigation(qa['question'])
+                if not self._is_bot_navigation(qa['question']) and 
+                   not self._is_system_reopen_message(qa['question'], '')
             ]
             source_type = "NO_OP"
         
@@ -1122,26 +1269,26 @@ class MainIssueDetector:
         if source_type in ["POST_OP", "QUEUE"]:
             print(f"   ⚠️ Using contextual fallback from {source_type}...")
             # Ambil pesan terakhir customer yang bukan bot command
-            last_qa = target_qa_pairs[-1]
-            return {
-                'question': last_qa['question'],
-                'question_time': last_qa['question_time'],
-                'detection_score': 2,
-                'detection_reason': 'Customer greeting/queue message',
-                'source_type': source_type
-            }
+            for qa in reversed(target_qa_pairs):
+                if qa['question'] and len(str(qa['question']).strip()) > 2:
+                    return {
+                        'question': qa['question'],
+                        'question_time': qa['question_time'],
+                        'detection_score': 2,
+                        'detection_reason': f'Customer message from {source_type}',
+                        'source_type': source_type
+                    }
         
         print("   ❌ All detection strategies failed")
         return None
 
     def _find_conversation_start_time(self, ticket_df):
-        """Cari kapan percakapan benar-benar dimulai dengan operator"""
+        """Cari kapan percakapan benar-benar dimulai dengan operator (SKIP system messages)"""
         if ticket_df is None or ticket_df.empty:
             return None
             
         ticket_df = ticket_df.sort_values('parsed_timestamp').reset_index(drop=True)
         
-        # Regex yang mencakup log user ("Selamat malam... Selamat datang...")
         operator_greeting_patterns = [
             r"selamat\s+(pagi|siang|sore|malam).+selamat\s+datang", 
             r"selamat\s+datang\s+di\s+layanan",
@@ -1151,19 +1298,22 @@ class MainIssueDetector:
             r"saat\s+ini\s+anda\s+terhubung",
             r"terhubung\s+dengan\s+live\s+chat",
             r"halo.*selamat\s+(pagi|siang|sore|malam)",
-            r"selamat\s+(pagi|siang|sore|malam).*nama\s+saya"
+            r"selamat\s+(pagi|siang|sore|malam).*nama\s+saya",
+            r"hai.*selamat\s+(pagi|siang|sore|malam)",
+            r"selamat.*(pagi|siang|sore|malam).*saya.*(operator|agent|cs|admin)"
         ]
         
+        # Langsung scan dataframe, skip system messages
         for idx, row in ticket_df.iterrows():
             role = str(row.get('Role', '')).lower()
             message = str(row['Message'])
             
-            # Skip pesan sistem/reopening
+            # SKIP system/reopen messages
             if self._is_system_reopen_message(message, role):
                 continue
             
             # Cek apakah pengirim adalah manusia/agen
-            is_agent = any(k in role for k in ['operator', 'agent', 'admin', 'cs', 'staff', 'support'])
+            is_agent = any(k in role for k in ['operator', 'agent', 'admin', 'cs', 'staff', 'support', 'representative', 'officer'])
             
             if is_agent:
                 # Cek greeting pattern
@@ -1171,10 +1321,10 @@ class MainIssueDetector:
                     if re.search(pattern, message, re.IGNORECASE):
                         # Pastikan ini bukan pesan closing
                         if not self._is_closing_message(message):
-                            print(f"   ✅ Found operator greeting: {message[:50]}...")
+                            print(f"   ✅ Found operator greeting (non-system): {message[:50]}...")
                             return row['parsed_timestamp']
-                        
-        # Fallback: Pesan pertama dari role Operator apapun (tapi skip sistem)
+    
+        # Fallback 1: Pesan pertama dari role Operator apapun (tapi skip sistem)
         for idx, row in ticket_df.iterrows():
             role = str(row.get('Role', '')).lower()
             message = str(row['Message'])
@@ -1186,39 +1336,68 @@ class MainIssueDetector:
             if any(k in role for k in ['operator', 'agent', 'admin', 'cs', 'staff', 'support']):
                 # Pastikan bukan closing message
                 if not self._is_closing_message(message):
-                    print(f"   ⚠️ Using first operator message as anchor: {row['Message'][:30]}...")
+                    print(f"   ⚠️ Using first non-system operator message as anchor: {row['Message'][:30]}...")
+                    return row['parsed_timestamp']
+    
+        # Fallback 2: Jika tidak ditemukan operator di non-system messages
+        print("   ⚠️ No operator found in non-system messages, checking all messages...")
+        for idx, row in ticket_df.iterrows():
+            role = str(row.get('Role', '')).lower()
+            message = str(row['Message'])
+            
+            # Skip jika jelas-jelas PURE system message (tapi allow ambiguous)
+            if self._is_pure_reopen_message(message):
+                continue
+                
+            if any(k in role for k in ['operator', 'agent', 'admin', 'cs', 'staff', 'support']):
+                if not self._is_closing_message(message):
+                    print(f"   ⚠️ Using first available operator message: {row['Message'][:30]}...")
                     return row['parsed_timestamp']
                 
+        print("   ❌ No valid operator start time found")
         return None
-
-    def _is_system_reopen_message(self, message, role):
-        """Cek apakah pesan adalah system/reopen message"""
-        message_lower = str(message).lower()
-        role_lower = str(role).lower()
-        
-        # Cek berdasarkan role
-        if any(sys_role in role_lower for sys_role in ['system', 'bot', 'auto', 'notification']):
-            return True
-        
-        # Cek berdasarkan content pattern
-        for pattern in self.system_reopen_patterns:
-            if re.search(pattern, message_lower, re.IGNORECASE):
-                return True
-        
-        return False
 
     def _is_closing_message(self, message):
         """Cek apakah pesan adalah closing/ending message"""
+        if not message:
+            return False
+            
         message_lower = str(message).lower()
-        closing_keywords = [
-            'terima kasih', 'terimakasih', 'thank you', 'thanks', 
-            'selesai', 'finished', 'tutup percakapan', 'close chat',
-            'percakapan selesai', 'sampai jumpa', 'goodbye'
+        
+        # Exact closing phrases
+        closing_phrases = [
+            'terima kasih',
+            'terimakasih',
+            'thank you',
+            'thanks',
+            'selesai',
+            'finished',
+            'tutup percakapan',
+            'close chat',
+            'percakapan selesai',
+            'sampai jumpa',
+            'goodbye',
+            'have a nice day',
+            'semoga harimu menyenangkan',
+            'percakapan ini ditutup'
         ]
         
-        for keyword in closing_keywords:
-            if keyword in message_lower:
+        for phrase in closing_phrases:
+            if phrase in message_lower:
                 return True
+                
+        # Pattern untuk closing
+        closing_patterns = [
+            r'terima kasih.*telah.*menghubungi',
+            r'thank you.*for.*contacting',
+            r'percakapan.*telah.*ditutup',
+            r'chat.*has.*been.*closed'
+        ]
+        
+        for pattern in closing_patterns:
+            if re.search(pattern, message_lower, re.IGNORECASE):
+                return True
+                
         return False
 
     def _is_bot_navigation(self, text):
@@ -1228,14 +1407,29 @@ class MainIssueDetector:
             
         text_lower = str(text).lower().strip()
         
-        # Cek exact match atau contain keyword bot
-        for keyword in self.bot_navigation_keywords:
-            if keyword == text_lower or (len(text_lower) < 25 and keyword in text_lower):
-                return True
+        # Skip jika terlalu pendek
+        if len(text_lower) < 2:
+            return True
         
-        # Cek jika terlalu pendek (1-2 kata tanpa konteks)
-        words = text_lower.split()
-        if len(words) <= 2 and len(text_lower) < 10:
+        # Exact match untuk common bot responses
+        exact_bot_responses = [
+            'ya', 'tidak', 'ok', 'oke', 'baik', 'sip', 'y', 'n',
+            'yes', 'no', 'okay', 'got it', 'roger', 'terima kasih',
+            'thanks', 'thank you'
+        ]
+        
+        if text_lower in exact_bot_responses:
+            return True
+        
+        # Cek contain keyword bot
+        for keyword in self.bot_navigation_keywords:
+            if keyword == text_lower or keyword in text_lower:
+                # Tapi jangan flag jika itu bagian dari kalimat panjang
+                if len(text_lower.split()) <= 3 or len(text_lower) < 20:
+                    return True
+        
+        # Cek jika hanya berisi angka atau simbol
+        if re.match(r'^[\d\s\W]+$', text_lower):
             return True
             
         return False
@@ -1249,24 +1443,43 @@ class MainIssueDetector:
         question_lower = str(question).lower()
         words = question_lower.split()
         
-        # Length score (pertanyaan panjang biasanya lebih penting)
-        if len(words) >= 15: score += 3
+        # Base score berdasarkan panjang
+        if len(words) >= 20: score += 4
+        elif len(words) >= 15: score += 3
         elif len(words) >= 10: score += 2
         elif len(words) >= 5: score += 1
         
-        # Keywords scoring
-        if any(k in question_lower for k in self.complaint_keywords): score += 5
-        elif any(k in question_lower for k in self.urgent_keywords): score += 4
-        elif any(k in question_lower for k in self.problem_keywords): score += 3
+        # Keywords scoring (prioritas tinggi)
+        if any(k in question_lower for k in self.complaint_keywords):
+            score += 5
+            # Extra point untuk complaint keras
+            hard_complaints = ['anjir', 'bangsat', 'bodoh', 'tolol', 'goblok', 'sial']
+            if any(hc in question_lower for hc in hard_complaints):
+                score += 2
         
-        # Question marks
-        if '?' in question_lower: score += 1
+        if any(k in question_lower for k in self.urgent_keywords):
+            score += 4
+            
+        if any(k in question_lower for k in self.problem_keywords):
+            score += 3
+        
+        # Question marks dan tanda tanya
+        if '?' in question_lower:
+            score += 2
+        elif any(word in question_lower for word in ['kenapa', 'mengapa', 'bagaimana', 'kapan', 'dimana', 'berapa']):
+            score += 1
         
         # Context indicators
-        if any(word in question_lower for word in ['mohon', 'tolong', 'bisa tolong']): score += 1
-        if any(word in question_lower for word in ['kenapa', 'mengapa', 'bagaimana', 'kapan']): score += 1
+        if any(word in question_lower for word in ['mohon', 'tolong', 'bisa tolong', 'minta tolong']):
+            score += 1
+            
+        # Negative indicators (kurangi score)
+        if any(vague in question_lower for vague in self.vague_patterns):
+            if len(words) < 5:  # Hanya vague pendek
+                score -= 1
         
-        return score
+        # Minimal score 0
+        return max(score, 0)
 
     def _strict_main_issue_detection(self, qa_pairs):
         """Hanya return jika ada score tinggi (masalah jelas)"""
@@ -1281,17 +1494,28 @@ class MainIssueDetector:
             score = self._calculate_question_score(q_text)
             
             # Hanya pertanyaan dengan score tinggi
-            if score >= 4:  # Minimal urgent atau complaint
+            if score >= 5:  # Minimal problem dengan detail
                 candidates.append((qa, score))
         
         if candidates:
             candidates.sort(key=lambda x: x[1], reverse=True)
             best_qa, best_score = candidates[0]
+            
+            # Adjust reason berdasarkan score
+            if best_score >= 10:
+                reason = "Urgent complaint detected"
+            elif best_score >= 8:
+                reason = "Serious problem detected"
+            elif best_score >= 6:
+                reason = "Clear problem statement"
+            else:
+                reason = self._get_detection_reason(best_score)
+                
             return {
                 'question': best_qa['question'],
                 'question_time': best_qa['question_time'],
                 'detection_score': best_score,
-                'detection_reason': self._get_detection_reason(best_score)
+                'detection_reason': reason
             }
         return None
 
@@ -1317,7 +1541,7 @@ class MainIssueDetector:
             candidates.sort(key=lambda x: (x[1], len(str(x[0]['question']).split())), reverse=True)
             best_qa, best_score = candidates[0]
             
-            # Update score jadi minimal 1 agar reason-nya bukan 'Unknown'
+            # Update score jadi minimal 1
             final_score = max(best_score, 1)
             
             return {
@@ -1330,9 +1554,9 @@ class MainIssueDetector:
 
     def debug_conversation_flow(self, qa_pairs, ticket_df):
         """Function untuk debugging flow deteksi"""
-        print("\n" + "="*60)
+        print("\n" + "="*80)
         print("DEBUG MAIN ISSUE DETECTION")
-        print("="*60)
+        print("="*80)
         
         print(f"Total QA Pairs: {len(qa_pairs)}")
         
@@ -1344,31 +1568,79 @@ class MainIssueDetector:
         op_start = self._find_conversation_start_time(ticket_df)
         print(f"Operator Start Time: {op_start}")
         
-        # Show all QA pairs
-        print("\nQA Pairs:")
+        # Check system messages
+        print("\nSystem/Reopen Messages Detection:")
+        if ticket_df is not None:
+            for i, row in ticket_df.iterrows():
+                msg = str(row['Message'])
+                role = str(row.get('Role', ''))
+                if self._is_system_reopen_message(msg, role):
+                    print(f"  [{i}] SYSTEM: {msg[:80]}...")
+        
+        # Show all QA pairs dengan scoring
+        print("\nQA Pairs with Scoring:")
         for i, qa in enumerate(qa_pairs):
             q_time = qa.get('question_time', 'N/A')
-            q_text = str(qa['question'])[:50] + "..." if len(str(qa['question'])) > 50 else qa['question']
+            q_text = str(qa['question'])
+            if len(q_text) > 60:
+                q_text = q_text[:57] + "..."
+                
             score = self._calculate_question_score(qa['question'])
-            print(f"  [{i}] {q_time} | Score: {score} | Q: {q_text}")
+            is_bot = self._is_bot_navigation(qa['question'])
+            is_system = self._is_system_reopen_message(qa['question'], '')
+            
+            flags = []
+            if is_bot: flags.append("BOT")
+            if is_system: flags.append("SYS")
+            if self._is_pure_reopen_message(qa['question']): flags.append("PURE_REOPEN")
+            
+            flag_str = f"[{','.join(flags)}]" if flags else ""
+            
+            print(f"  [{i:2d}] {q_time} | Score: {score:2d} {flag_str:15} | Q: {q_text}")
         
         # Run detection
+        print("\n" + "-"*80)
+        print("RUNNING DETECTION...")
         result = self.detect_main_issue(qa_pairs, ticket_df)
         
-        print("\n" + "="*60)
+        print("\n" + "="*80)
         print("DETECTION RESULT:")
         if result:
-            print(f"  Question: {result['question']}")
-            print(f"  Time: {result['question_time']}")
-            print(f"  Score: {result['detection_score']}")
-            print(f"  Reason: {result['detection_reason']}")
-            print(f"  Source: {result.get('source_type', 'N/A')}")
+            print(f"  ✓ Question: {result['question']}")
+            print(f"  ✓ Time: {result['question_time']}")
+            print(f"  ✓ Score: {result['detection_score']}")
+            print(f"  ✓ Reason: {result['detection_reason']}")
+            print(f"  ✓ Source: {result.get('source_type', 'N/A')}")
+            if result.get('is_reopened_ticket'):
+                print(f"  ✓ Reopened Ticket: Yes (at {result.get('reopening_time')})")
         else:
             print("  ❌ NO MAIN ISSUE DETECTED")
-        print("="*60 + "\n")
+        print("="*80 + "\n")
         
         return result
+
+# Helper function untuk testing
+def test_main_issue_detector():
+    """Test function untuk verifikasi MainIssueDetector"""
+    detector = MainIssueDetector()
     
+    # Test 1: Pure reopen message
+    test_messages = [
+        "Ticket Has Been Reopened by System",
+        "ticket has been reopened by admin",
+        "This ticket has been reopened",
+        "Chat telah dibuka kembali",
+        "bisa tolong reopen ticket saya?",
+        "mohon dibuka kembali chatnya"
+    ]
+    
+    print("Testing Reopen Message Detection:")
+    for msg in test_messages:
+        is_pure = detector._is_pure_reopen_message(msg)
+        is_system = detector._is_system_reopen_message(msg, 'system')
+        print(f"  '{msg[:30]}...' -> Pure: {is_pure}, System: {is_system}")
+    
+    return detector    
 class ReplyAnalyzer:
     def __init__(self, complaint_tickets=None):
         self.complaint_tickets = complaint_tickets or {}
@@ -2549,4 +2821,5 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
