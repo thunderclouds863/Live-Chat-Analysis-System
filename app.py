@@ -829,7 +829,7 @@ def display_enhanced_lead_time_tab(results, stats):
                 try:
                     final_lt_minutes = float(final_lt_min)
                 except (ValueError, TypeError):
-                pass
+                    pass
         
         if final_lt_minutes is not None and final_lt_minutes > 0:
             lead_time_by_type[issue_type]['final_lead_times_minutes'].append(final_lt_minutes)
@@ -1572,3 +1572,4 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
