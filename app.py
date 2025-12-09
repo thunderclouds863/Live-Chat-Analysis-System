@@ -760,7 +760,7 @@ def display_enhanced_lead_time_tab(results, stats):
     with col4:
         st.metric("Final Reply Samples", lead_time_stats['final_samples'])
 
-    # 2. BREAKDOWN PER Inquiry Type
+    # 2. BREAKDOWN PER Inquiry Type (SEMUA DISATUKAN)
     st.markdown("### 📈 Lead Time Breakdown by Inquiry Type")
     
     def minutes_to_dd_hh_mm_ss(minutes):
@@ -1594,6 +1594,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
