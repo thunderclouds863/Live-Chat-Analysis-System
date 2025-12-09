@@ -760,7 +760,7 @@ def display_enhanced_lead_time_tab(results, stats):
     with col4:
         st.metric("Final Reply Samples", lead_time_stats['final_samples'])
 
-    # 2. BREAKDOWN PER Inquiry Type (SEMUA DISATUKAN)
+    # 2. BREAKDOWN PER Inquiry Type (CLEAN VERSION)
     st.markdown("### 📈 Lead Time Breakdown by Inquiry Type")
     
     def minutes_to_dd_hh_mm_ss(minutes):
@@ -790,9 +790,9 @@ def display_enhanced_lead_time_tab(results, stats):
                 'final_lead_times_minutes': []
             }
         
-        # First reply lead times
+        # First reply
         first_lt = result.get('first_reply_lead_time_minutes')
-        if first_lt is not None and first_lt != 'N/A':
+        if first_lt and first_lt != 'N/A':
             try:
                 first_lt_float = float(first_lt)
                 if first_lt_float > 0:
@@ -800,30 +800,30 @@ def display_enhanced_lead_time_tab(results, stats):
             except:
                 pass
         
-        # Final reply lead times
+        # Final reply
         final_lt_minutes = None
         if issue_type == 'complaint':
             final_lt_days = result.get('final_reply_lead_time_days')
-            if final_lt_days is not None and final_lt_days != 'N/A':
+            if final_lt_days and final_lt_days != 'N/A':
                 try:
                     final_lt_minutes = float(final_lt_days) * 24 * 60
                 except:
                     pass
         else:
             final_lt_min = result.get('final_reply_lead_time_minutes')
-            if final_lt_min is not None and final_lt_min != 'N/A':
+            if final_lt_min and final_lt_min != 'N/A':
                 try:
                     final_lt_minutes = float(final_lt_min)
                 except:
                     pass
         
-        if final_lt_minutes is not None and final_lt_minutes > 0:
+        if final_lt_minutes and final_lt_minutes > 0:
             lead_time_by_type[issue_type]['final_lead_times_minutes'].append(final_lt_minutes)
     
-    # Display breakdown
+    # Create table
     breakdown_data = []
     for issue_type, data in lead_time_by_type.items():
-        # Calculate averages
+        # First reply avg
         first_avg_str = 'N/A'
         if data['first_lead_times']:
             try:
@@ -832,6 +832,7 @@ def display_enhanced_lead_time_tab(results, stats):
             except:
                 pass
         
+        # Final reply avg
         final_avg_str = 'N/A'
         if data['final_lead_times_minutes']:
             try:
@@ -850,49 +851,10 @@ def display_enhanced_lead_time_tab(results, stats):
     if breakdown_data:
         df_breakdown = pd.DataFrame(breakdown_data)
         df_breakdown = df_breakdown.sort_values('Inquiry Type')
+        st.dataframe(df_breakdown, use_container_width=True)
         
-        # Highlight berdasarkan performance
-        def highlight_cells(val):
-            if val == 'N/A':
-                return ''
-            
-            # Parse waktu
-            try:
-                days, hours, mins, secs = map(int, val.split(':'))
-                total_mins = days * 24 * 60 + hours * 60 + mins
-                
-                # Warna berdasarkan performa
-                if total_mins <= 5:  # ≤ 5 menit = excellent
-                    return 'background-color: #90EE90; color: black;'
-                elif total_mins <= 15:  # ≤ 15 menit = good
-                    return 'background-color: #FFD700; color: black;'
-                elif total_mins <= 60:  # ≤ 1 jam = average
-                    return 'background-color: #FFA500; color: black;'
-                else:  # > 1 jam = poor
-                    return 'background-color: #FF6B6B; color: white;'
-            except:
-                return ''
-        
-        styled_df = df_breakdown.style.applymap(
-            highlight_cells, 
-            subset=['First Reply Avg', 'Final Reply Avg']
-        )
-        
-        st.dataframe(styled_df, use_container_width=True)
-        
-        # Tambahkan legenda warna
-        st.markdown("""
-        <div style="background-color: #f0f2f6; padding: 10px; border-radius: 5px; margin-top: 10px;">
-        <small>
-        <b>Color Legend:</b><br>
-        <span style="background-color: #90EE90; padding: 2px 5px;">Excellent (≤ 5 min)</span> 
-        <span style="background-color: #FFD700; padding: 2px 5px;">Good (≤ 15 min)</span> 
-        <span style="background-color: #FFA500; padding: 2px 5px;">Average (≤ 1 hour)</span> 
-        <span style="background-color: #FF6B6B; padding: 2px 5px; color: white;">Poor (> 1 hour)</span>
-        </small>
-        </div>
-        """, unsafe_allow_html=True)
-        
+        # Add format explanation
+        st.caption("Format: dd:hh:mm:ss (Days:Hours:Minutes:Seconds)")
     else:
         st.info("No lead time data available for breakdown")
 
@@ -1594,6 +1556,7 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
 
