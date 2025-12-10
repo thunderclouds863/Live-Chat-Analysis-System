@@ -1693,69 +1693,143 @@ class ReplyAnalyzer:
             print("   🤖 ML Solution Model Loaded: Siap memvalidasi jawaban operator.")
         except Exception as e:
             print(f"   ⚠️ ML Solution Model missing ({e}). Running Rule-Based only.")
-
+    
     def _check_enhanced_customer_leave(self, ticket_df, first_reply_found, final_reply_found, question_time):
-        """Enhanced customer leave detection dengan final_reply_found check"""
+        """Enhanced customer leave detection dengan handling multiple leaves"""
         
-        # Cari semua automation messages dengan keyword customer leave
+        print(f"   🔍 Starting customer leave check...")
+        print(f"   ⏰ Question time: {question_time}")
+        
+        # Cari SEMUA automation leave messages
         automation_messages = ticket_df[
             (ticket_df['Role'].str.lower().str.contains('automation', na=False)) &
             (ticket_df['Message'].str.contains(config.CUSTOMER_LEAVE_KEYWORD, na=False))
-        ]
+        ].sort_values('parsed_timestamp')
+        
+        print(f"   📊 Found {len(automation_messages)} automation leave messages total")
         
         if automation_messages.empty:
+            print("   ❌ No automation leave message found")
             return False
         
-        leave_message = automation_messages.iloc[0]
+        # 🎯 CARI TICKET REOPENED TIME
+        reopened_time = self._find_ticket_reopened_time(ticket_df)
+        
+        if reopened_time:
+            print(f"   🔄 Ticket was REOPENED at: {reopened_time}")
+            
+            # Cari leave messages SETELAH reopened
+            leave_messages_after_reopen = automation_messages[
+                automation_messages['parsed_timestamp'] > reopened_time
+            ]
+            
+            if not leave_messages_after_reopen.empty:
+                print(f"   📊 Found {len(leave_messages_after_reopen)} leave messages AFTER reopen")
+                
+                # Ambil leave message TERAKHIR setelah reopened
+                leave_message = leave_messages_after_reopen.iloc[-1]
+                leave_time = leave_message['parsed_timestamp']
+                leave_text = leave_message['Message']
+                
+                print(f"   ⏰ LAST leave message after reopen: {leave_time}")
+                print(f"   📝 Leave message: {leave_text[:80]}...")
+                
+                # Sekarang cari operator messages SETELAH reopened dan SEBELUM leave
+                operator_messages_after_reopen = ticket_df[
+                    (ticket_df['parsed_timestamp'] > reopened_time) &
+                    (ticket_df['parsed_timestamp'] < leave_time) &
+                    (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
+                ].sort_values('parsed_timestamp')
+                
+                if operator_messages_after_reopen.empty:
+                    print("   ⚠️ No operator messages after reopen (before leave)")
+                    return False
+                
+                print(f"   👨‍💼 Found {len(operator_messages_after_reopen)} operator messages after reopen")
+                
+                # Ambil operator message TERAKHIR sebelum leave
+                last_operator_msg = operator_messages_after_reopen.iloc[-1]
+                last_op_time = last_operator_msg['parsed_timestamp']
+                last_op_text = last_operator_msg['Message'][:80] + '...' if len(last_operator_msg['Message']) > 80 else last_operator_msg['Message']
+                
+                print(f"   👋 Last operator message after reopen: {last_op_time}")
+                print(f"   💬 Last operator message: {last_op_text}")
+                
+                # Cek customer response SETELAH operator terakhir (setelah reopen)
+                customer_responses = ticket_df[
+                    (ticket_df['parsed_timestamp'] > last_op_time) &
+                    (ticket_df['parsed_timestamp'] < leave_time) &
+                    (ticket_df['Role'].str.lower().str.contains('customer', na=False))
+                ]
+                
+                print(f"   💬 Customer responses after last operator (after reopen): {len(customer_responses)}")
+                
+                # 🎯 LOGIKA: Ini customer leave JIKA:
+                # 1. Ada leave message setelah reopened
+                # 2. Customer tidak respon setelah operator terakhir (setelah reopened)
+                # 3. Leave message menyebut "tidak ada respon"
+                
+                is_true_leave = (
+                    len(customer_responses) == 0 and
+                    "tidak ada respon" in leave_text.lower()
+                )
+                
+                if is_true_leave:
+                    time_gap = (leave_time - last_op_time).total_seconds() / 60
+                    print(f"   🚨 TRUE CUSTOMER LEAVE AFTER REOPENED: Customer tidak respon {time_gap:.1f} menit")
+                    return True
+                else:
+                    if len(customer_responses) > 0:
+                        print(f"   ✅ NOT customer leave: Customer responded after reopened")
+                    else:
+                        print(f"   ❓ Leave message doesn't mention 'no response'")
+                    return False
+            
+            else:
+                print(f"   ⚠️ No leave messages found AFTER reopened time")
+                # Fallback ke logika lama untuk leave sebelum reopened
+                leave_message = automation_messages.iloc[-1]
+                print(f"   📝 Using last leave message (before reopen?): {leave_message['Message'][:80]}...")
+        
+        # 🎯 FALLBACK: Jika tidak ada reopened, gunakan leave message terakhir
+        leave_message = automation_messages.iloc[-1]
         leave_time = leave_message['parsed_timestamp']
+        leave_text = leave_message['Message']
         
-        print(f"   ⏰ Found automation leave message at: {leave_time}")
+        print(f"   ⏰ Using LAST leave message overall: {leave_time}")
         
-        # Cari operator greeting sebelum leave message
-        operator_greetings = self._find_operator_greetings_before_time(ticket_df, leave_time)
+        # Cari operator messages SEBELUM leave
+        operator_messages = ticket_df[
+            (ticket_df['parsed_timestamp'] < leave_time) &
+            (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
+        ].sort_values('parsed_timestamp')
         
-        if operator_greetings.empty:
-            print("   ⚠️ No operator greeting found before leave message")
+        if operator_messages.empty:
+            print("   ⚠️ No operator messages found")
             return False
         
-        last_greeting = operator_greetings.iloc[-1]
-        greeting_time = last_greeting['parsed_timestamp']
+        last_operator_msg = operator_messages.iloc[-1]
+        last_op_time = last_operator_msg['parsed_timestamp']
         
-        print(f"   👋 Last operator greeting at: {greeting_time}")
-        print(f"   ⏱️  Time gap: {(leave_time - greeting_time).total_seconds() / 60:.1f} minutes")
+        # Cek customer response
+        customer_responses = ticket_df[
+            (ticket_df['parsed_timestamp'] > last_op_time) &
+            (ticket_df['parsed_timestamp'] < leave_time) &
+            (ticket_df['Role'].str.lower().str.contains('customer', na=False))
+        ]
         
-        # Cek interaksi customer SETELAH operator greeting
-        customer_interactions = self._find_customer_interactions_after_greeting(ticket_df, greeting_time, leave_time)
-        
-        print(f"   💬 Customer interactions after operator greeting: {len(customer_interactions)}")
-        print(f"   ✅ Final reply found: {final_reply_found}")
-        print(f"   ⏰ Question time: {question_time}")
-        
-        # 🎯 LOGIKA YANG DIPERBAIKI:
-        # Customer leave terjadi jika:
-        # 1. Customer TIDAK RESPON setelah operator greeting (tidak ada customer message)
-        # 2. DAN tidak ada final reply yang ditemukan
-        # 3. DAN ada automation leave message
-        
-        # PERBAIKAN PENTING: Operator sudah merespon, tapi customer tidak balas
-        # Ini MASIH customer leave!
+        print(f"   💬 Customer responses after last operator: {len(customer_responses)}")
         
         is_true_leave = (
-            len(customer_interactions) == 0 and  # Customer tidak respon
-            not final_reply_found and            # Tidak ada final reply yang meaningful
-            not operator_greetings.empty         # Ada operator greeting sebelumnya
+            len(customer_responses) == 0 and
+            "tidak ada respon" in leave_text.lower()
         )
         
         if is_true_leave:
-            print("   🚨 TRUE CUSTOMER LEAVE: Customer tidak merespon setelah operator reply")
+            print(f"   🚨 TRUE CUSTOMER LEAVE: Customer tidak respon")
         else:
-            if final_reply_found:
-                print("   ✅ NOT customer leave: Final reply found")
-            elif len(customer_interactions) > 0:
-                print("   ✅ NOT customer leave: Customer responded")
-            else:
-                print("   ❌ Other reason")
-                
+            print(f"   ✅ NOT customer leave")
+        
         return is_true_leave
 
     def _find_operator_greetings_before_time(self, ticket_df, target_time):
@@ -2128,6 +2202,51 @@ class ReplyAnalyzer:
     def analyze_replies(self, ticket_id, ticket_df, qa_pairs, main_issue):
         print(f"🔍 Analyzing replies for ticket {ticket_id}")
         
+        # DEBUG: Tampilkan timeline lengkap
+        print(f"   📅 TICKET TIMELINE DEBUG:")
+        sorted_df = ticket_df.sort_values('parsed_timestamp')
+        
+        # Cari semua event penting
+        reopened_times = []
+        leave_messages = []
+        
+        for idx, row in sorted_df.iterrows():
+            msg = str(row['Message'])
+            role = row['Role']
+            time = row['parsed_timestamp']
+            
+            if "Ticket Has Been Reopened" in msg:
+                reopened_times.append(time)
+                print(f"   🔄 REOPENED at {time}")
+            
+            if config.CUSTOMER_LEAVE_KEYWORD in msg:
+                leave_messages.append((time, msg))
+                print(f"   🚪 LEAVE MESSAGE at {time}")
+        
+        print(f"   📊 Total reopened events: {len(reopened_times)}")
+        print(f"   📊 Total leave messages: {len(leave_messages)}")
+        
+        # Tampilkan timeline
+        print(f"   📋 Complete timeline:")
+        for idx, row in sorted_df.iterrows():
+            time = row['parsed_timestamp'].strftime('%Y-%m-%d %H:%M:%S')
+            role = row['Role'][:15]
+            msg = row['Message'][:60] + '...' if len(row['Message']) > 60 else row['Message']
+            
+            # Tandai event penting
+            marker = ""
+            if "Ticket Has Been Reopened" in msg:
+                marker = "🔄 "
+            elif config.CUSTOMER_LEAVE_KEYWORD in msg:
+                marker = "🚪 "
+            elif "customer" in role.lower() and "?" in msg:
+                marker = "❓ "
+            elif "operator" in role.lower():
+                marker = "👨‍💼 "
+            
+            print(f"      {time} {marker}[{role}]: {msg}")
+        
+        # Lanjutkan dengan analisis normal...
         is_complaint, complaint_data = self._is_complaint_ticket(ticket_id)
         if is_complaint:
             print("   🚨 COMPLAINT ticket detected")
@@ -2136,6 +2255,7 @@ class ReplyAnalyzer:
         has_reopened, reopened_time = self._has_ticket_reopened_with_time(ticket_df)
         
         if has_reopened:
+            print(f"   🔄 Ticket HAS REOPENED at {reopened_time}")
             is_claimed = self._has_claimed_after_reassigned(ticket_df, reopened_time)
             is_reassigned = self._has_reassigned_after_reopened(ticket_df, reopened_time)
             
@@ -2923,6 +3043,7 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
 
