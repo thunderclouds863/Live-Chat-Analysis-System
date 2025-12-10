@@ -2134,11 +2134,20 @@ class ReplyAnalyzer:
         if has_reopened:
             is_claimed = self._has_claimed_after_reassigned(ticket_df, reopened_time)
             is_reassigned = self._has_reassigned_after_reopened(ticket_df, reopened_time)
+            
             if is_reassigned:
-                print("   🔄 REOPENED but REASSIGNED - treating as NORMAL")
-                return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
+                # Cek apakah masih ada percakapan setelah reassigned
+                has_conversation_after_reassigned = self._has_conversation_after_reassigned(ticket_df, reopened_time)
+                
+                if has_conversation_after_reassigned:
+                    print("   🔄 REOPENED, REASSIGNED, but HAS MORE CONVERSATIONS - treating as SERIOUS")
+                    return self._analyze_enhanced_serious_replies(ticket_df, qa_pairs, main_issue)
+                else:
+                    print("   🔄 REOPENED and REASSIGNED - treating as NORMAL")
+                    return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
+            
             if is_claimed:
-                print("   🔄 REASSIGNED but CLAIMED - treating as NORMAL")
+                print("   🔄 REASSIGNED but CLAIMED - treating as SERIOUS (has continued conversation)")
                 return self._analyze_enhanced_serious_replies(ticket_df, qa_pairs, main_issue)
             else:
                 print("   ⚠️  SERIOUS ticket detected (has reopened pattern without reassigned)")
@@ -2161,22 +2170,69 @@ class ReplyAnalyzer:
                 reopened_time = row['parsed_timestamp']
                 return True, reopened_time
         return False, None
-
+    
+    def _has_conversation_after_reassigned(self, ticket_df, reopened_time):
+        """
+        Cek apakah masih ada percakapan setelah reassigned.
+        Percakapan didefinisikan sebagai message yang bukan system message.
+        """
+        if reopened_time is None:
+            return False
+        
+        after_reopened = ticket_df[ticket_df['parsed_timestamp'] > reopened_time]
+        
+        if after_reopened.empty:
+            return False
+        
+        # Cari timestamp reassigned terakhir
+        last_reassigned_time = None
+        for _, row in after_reopened.iterrows():
+            msg = str(row['Message']).lower()
+            if any(p in msg for p in ['reassigned to']):
+                last_reassigned_time = row['parsed_timestamp']
+        
+        if last_reassigned_time is None:
+            return False
+        
+        # Cek apakah ada message setelah reassigned terakhir
+        after_last_reassigned = ticket_df[ticket_df['parsed_timestamp'] > last_reassigned_time]
+        
+        if after_last_reassigned.empty:
+            return False
+        
+        # Filter untuk message yang bukan system message
+        system_patterns = [
+            'reassigned to',
+            'claimed by',
+            'ticket has been reopened',
+            'ticket has been closed',
+            'status changed to'
+        ]
+        
+        for _, row in after_last_reassigned.iterrows():
+            msg = str(row['Message']).lower()
+            # Jika message tidak mengandung pattern system, berarti ada percakapan
+            if not any(pattern in msg for pattern in system_patterns):
+                return True
+        
+        return False
+    
     def _has_reassigned_after_reopened(self, ticket_df, reopened_time):
         if reopened_time is None:
             return False
         
         after_reopened = ticket_df[ticket_df['parsed_timestamp'] > reopened_time]
         
-        # PERBAIKAN: Gunakan .empty untuk cek DataFrame
         if after_reopened.empty:
             return False
-            
+        
+        reassigned_count = 0
         for _, row in after_reopened.iterrows():
             msg = str(row['Message']).lower()
             if any(p in msg for p in ['reassigned to']):
-                return True
-        return False
+                reassigned_count += 1
+        
+        return reassigned_count > 0
 
     def _has_claimed_after_reassigned(self, ticket_df, reopened_time):
         if reopened_time is None:
@@ -2841,6 +2897,7 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
 
