@@ -1879,86 +1879,6 @@ class ReplyAnalyzer:
         
         return any(re.search(pattern, message_lower, re.IGNORECASE) for pattern in greeting_patterns)
 
-    def _has_conversation_after_reassigned(self, ticket_df, reopened_time):
-        """
-        Cek apakah masih ada percakapan setelah reassigned.
-        Percakapan didefinisikan sebagai message yang bukan system message.
-        """
-        if reopened_time is None:
-            return False
-        
-        after_reopened = ticket_df[ticket_df['parsed_timestamp'] > reopened_time]
-        
-        if after_reopened.empty:
-            return False
-        
-        # Cari timestamp reassigned terakhir
-        last_reassigned_time = None
-        for _, row in after_reopened.iterrows():
-            msg = str(row['Message']).lower()
-            if any(p in msg for p in ['reassigned to']):
-                last_reassigned_time = row['parsed_timestamp']
-        
-        if last_reassigned_time is None:
-            return False
-        
-        # Cek apakah ada message setelah reassigned terakhir
-        after_last_reassigned = ticket_df[ticket_df['parsed_timestamp'] > last_reassigned_time]
-        
-        if after_last_reassigned.empty:
-            return False
-        
-        # Filter untuk message yang bukan system message
-        system_patterns = [
-            'reassigned to',
-            'claimed by',
-            'ticket has been reopened',
-            'ticket has been closed',
-            'status changed to',
-            'antrian pelayanan',
-            'virtual assistant',
-            'selamat datang',
-            'terima kasih telah menghubungi'
-        ]
-        
-        for _, row in after_last_reassigned.iterrows():
-            msg = str(row['Message']).lower()
-            role = str(row['Role']).lower()
-            
-            # Jika message tidak mengandung pattern system DAN bukan dari automation/bot
-            if not any(pattern in msg for pattern in system_patterns):
-                # Juga cek role, jika customer atau operator manusia
-                if 'customer' in role or 'operator' in role or 'agent' in role:
-                    return True
-        
-        return False
-    
-    def _has_claimed_after_reassigned(self, ticket_df, reopened_time):
-        """Cek apakah ada claimed setelah reassigned"""
-        if reopened_time is None:
-            return False
-        
-        after_reopened = ticket_df[ticket_df['parsed_timestamp'] > reopened_time]
-        
-        if after_reopened.empty:
-            return False
-        
-        for _, row in after_reopened.iterrows():
-            msg = str(row['Message']).lower()
-            if any(p in msg for p in ['claimed by system to']):
-                return True
-        
-        return False
-    
-    def _find_ticket_reopened_time_before(self, ticket_df, target_time):
-        """Cari ticket reopened time sebelum waktu tertentu"""
-        for _, row in ticket_df.iterrows():
-            if "Ticket Has Been Reopened" in str(row.get('Message', '')):
-                if row['parsed_timestamp'] < target_time:
-                    return row['parsed_timestamp']
-        return None
-        
-    
     def _find_customer_interactions_after_greeting(self, ticket_df, greeting_time, leave_time):
         """Cari interaksi customer setelah greeting dan sebelum leave"""
         customer_messages = ticket_df[
@@ -2289,17 +2209,9 @@ class ReplyAnalyzer:
         """Cek solution keyword dengan daftar yang diperluas"""
         msg = str(message).lower()
         return any(k in msg for k in self.solution_keywords_extended)
-        
+    
     def analyze_replies(self, ticket_id, ticket_df, qa_pairs, main_issue):
         print(f"🔍 Analyzing replies for ticket {ticket_id}")
-        
-        # 🎯 CEK COMPLAINT DULU SEBELUM APAPUN!
-        is_complaint, complaint_data = self._is_complaint_ticket(ticket_id)
-        
-        print(f"   🔍 COMPLAINT CHECK: {is_complaint}")
-        if is_complaint:
-            print("   🚨 COMPLAINT ticket detected - SKIPPING semua logic lain!")
-            return self._analyze_complaint_replies(ticket_id, ticket_df, qa_pairs, main_issue, complaint_data)
         
         # DEBUG AWAL: Tampilkan semua event penting
         print(f"\n   🔍 INITIAL DEBUG - KEY EVENTS:")
@@ -2364,7 +2276,6 @@ class ReplyAnalyzer:
         
         print("   ✅ NORMAL ticket (no reopened detected)")
         return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
-        
 
     def _has_ticket_reopened_with_time(self, ticket_df):
         for _, row in ticket_df.iterrows():
