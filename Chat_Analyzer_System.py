@@ -2137,7 +2137,7 @@ class ReplyAnalyzer:
             if is_reassigned:
                 print("   🔄 REOPENED but REASSIGNED - treating as NORMAL")
                 return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
-            else if is_claimed:
+            if is_claimed:
                 print("   🔄 REASSIGNED but CLAIMED - treating as NORMAL")
                 return self._analyze_enhanced_serious_replies(ticket_df, qa_pairs, main_issue)
             else:
@@ -2841,6 +2841,7 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
 
