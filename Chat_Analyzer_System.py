@@ -2183,8 +2183,8 @@ class ReplyAnalyzer:
                 
                 return serious_result
         
-        print("   ✅ NORMAL ticket detected")
-        return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
+        #print("   ✅ NORMAL ticket detected")
+        #return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
 
     def _has_ticket_reopened_with_time(self, ticket_df):
         for _, row in ticket_df.iterrows():
@@ -2919,6 +2919,7 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
 
