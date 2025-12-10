@@ -1695,7 +1695,7 @@ class ReplyAnalyzer:
             print(f"   ⚠️ ML Solution Model missing ({e}). Running Rule-Based only.")
 
     def _check_enhanced_customer_leave(self, ticket_df, first_reply_found, final_reply_found, question_time):
-        """Enhanced customer leave detection dengan final_reply_found check"""
+        """Enhanced customer leave detection dengan logika khusus untuk reopened tickets"""
         
         # Cari semua automation messages dengan keyword customer leave
         automation_messages = ticket_df[
@@ -1722,9 +1722,9 @@ class ReplyAnalyzer:
         greeting_time = last_greeting['parsed_timestamp']
         
         print(f"   👋 Last operator greeting at: {greeting_time}")
-        print(f"   ⏱️  Time gap: {(leave_time - greeting_time).total_seconds() / 60:.1f} minutes")
+        print(f"   ⏱️ Time gap: {(leave_time - greeting_time).total_seconds() / 60:.1f} minutes")
         
-        # Cek interaksi
+        # Cek interaksi antara greeting dan leave
         customer_interactions = self._find_customer_interactions_after_greeting(ticket_df, greeting_time, leave_time)
         operator_interactions = self._find_operator_interactions_after_greeting(ticket_df, greeting_time, leave_time)
         
@@ -1733,24 +1733,44 @@ class ReplyAnalyzer:
         print(f"   ✅ Final reply found: {final_reply_found}")
         
         # 🎯 LOGIKA UTAMA YANG DIPERBAIKI:
-        is_true_leave = (
-            len(customer_interactions) == 0 and 
-            len(operator_interactions) == 0 and
-            not final_reply_found and  # 🆕 TAMBAHAN INI!
-            not operator_greetings.empty
-        )
+        # Untuk customer leave, yang penting adalah:
+        # 1. Operator sudah memberikan greeting
+        # 2. Tidak ada interaksi customer setelah greeting
+        # 3. Tidak ada interaksi operator meaningful setelah greeting
+        # 4. Tidak masalah apakah final_reply_found atau tidak
+        
+        # PERBAIKAN: Cek apakah ini reopened ticket
+        has_reopened = self._has_ticket_reopened_with_time(ticket_df)[0]
+        
+        if has_reopened:
+            print("   🔄 Ticket has reopened pattern - using relaxed customer leave detection")
+            # Untuk reopened tickets, fokus pada apakah customer merespons setelah greeting terakhir
+            is_true_leave = (
+                len(customer_interactions) == 0 and 
+                len(operator_interactions) == 0
+            )
+        else:
+            # Untuk normal tickets, gunakan logika strict
+            is_true_leave = (
+                len(customer_interactions) == 0 and 
+                len(operator_interactions) == 0 and
+                not final_reply_found
+            )
         
         if is_true_leave:
-            print("   🚨 TRUE CUSTOMER LEAVE: No interactions + No final reply")
+            print("   🚨 TRUE CUSTOMER LEAVE: No interactions after last operator greeting")
+            # PERBAIKAN: Untuk reopened tickets, berikan catatan khusus
+            if has_reopened:
+                print("   ℹ️  Reopened ticket with customer leave - likely unresolved issue")
         else:
-            if final_reply_found:
-                print("   ✅ NOT customer leave: Final reply found")
-            elif len(customer_interactions) > 0:
-                print("   ✅ NOT customer leave: Customer interacted")
+            if len(customer_interactions) > 0:
+                print("   ✅ NOT customer leave: Customer responded after greeting")
             elif len(operator_interactions) > 0:
-                print("   ✅ NOT customer leave: Operator interacted")
+                print("   ✅ NOT customer leave: Operator continued conversation")
+            elif not has_reopened and final_reply_found:
+                print("   ✅ NOT customer leave: Final reply was provided")
             else:
-                print("   ❌ Other reason")
+                print("   ❓ Borderline case - reviewing...")
                 
         return is_true_leave
 
@@ -1997,19 +2017,82 @@ class ReplyAnalyzer:
             
         return None
 
+    def _check_enhanced_customer_leave_reopened(self, ticket_df, final_reply_found, question_time):
+        """Special customer leave detection untuk reopened tickets"""
+        
+        # Cari semua automation messages dengan keyword customer leave
+        automation_messages = ticket_df[
+            (ticket_df['Role'].str.lower().str.contains('automation', na=False)) &
+            (ticket_df['Message'].str.contains(config.CUSTOMER_LEAVE_KEYWORD, na=False))
+        ]
+        
+        if automation_messages.empty:
+            return False
+        
+        leave_message = automation_messages.iloc[0]
+        leave_time = leave_message['parsed_timestamp']
+        
+        print(f"   ⏰ [REOPENED] Automation leave at: {leave_time}")
+        
+        # Cari REOPENED time
+        reopened_time = self._find_ticket_reopened_time(ticket_df)
+        
+        if reopened_time:
+            print(f"   🔄 [REOPENED] Ticket was reopened at: {reopened_time}")
+            
+            # Cari operator greeting SETELAH reopened
+            operator_greetings_after_reopen = self._find_operator_greetings_after_time(ticket_df, reopened_time)
+            
+            if not operator_greetings_after_reopen.empty:
+                last_greeting = operator_greetings_after_reopen.iloc[-1]
+                greeting_time = last_greeting['parsed_timestamp']
+                
+                print(f"   👋 [REOPENED] Last greeting after reopen at: {greeting_time}")
+                
+                # Cek interaksi antara greeting setelah reopen dan leave
+                customer_interactions = self._find_customer_interactions_after_greeting(
+                    ticket_df, greeting_time, leave_time
+                )
+                
+                # LOGIKA UTAMA untuk reopened tickets:
+                # Customer leave = tidak ada respons customer setelah greeting terakhir
+                is_true_leave = len(customer_interactions) == 0
+                
+                if is_true_leave:
+                    print("   🚨 [REOPENED] TRUE CUSTOMER LEAVE: No response after reopening")
+                else:
+                    print(f"   ✅ [REOPENED] NOT customer leave: Customer responded {len(customer_interactions)} times")
+                
+                return is_true_leave
+        
+        # Fallback ke logic biasa jika tidak ada reopened time
+        return self._check_enhanced_customer_leave(ticket_df, False, final_reply_found, question_time)
+    
     def _analyze_normal_replies(self, ticket_df, qa_pairs, main_issue):
         """Analyze replies untuk normal tickets - DIPERBAIKI dengan logic yang lebih baik"""
         print("   📋 Analyzing NORMAL replies...")
         
-        # PERBAIKAN: Gunakan method yang lebih baik untuk mencari final reply
-        final_reply = self._find_enhanced_solution_reply(ticket_df, main_issue['question_time'])
+        # PERBAIKAN: Cek dulu apakah ini reopened ticket
+        has_reopened, reopened_time = self._has_ticket_reopened_with_time(ticket_df)
         
-        final_reply_found = final_reply is not None
-        first_reply_found = False  # Untuk normal ticket, tidak ada first reply requirement
-        
-        customer_leave = self._check_enhanced_customer_leave(
-            ticket_df, first_reply_found, final_reply_found, main_issue['question_time']
-        )
+        if has_reopened:
+            print("   🔄 Reopened ticket detected in normal analysis")
+            # Untuk reopened tickets, kita perlu pendekatan berbeda
+            final_reply = self._find_enhanced_solution_reply(ticket_df, main_issue['question_time'])
+            final_reply_found = final_reply is not None
+            
+            # PERBAIKAN: Gunakan metode yang diperbaiki untuk customer leave detection
+            customer_leave = self._check_enhanced_customer_leave_reopened(
+                ticket_df, final_reply_found, main_issue['question_time']
+            )
+        else:
+            final_reply = self._find_enhanced_solution_reply(ticket_df, main_issue['question_time'])
+            final_reply_found = final_reply is not None
+            first_reply_found = False
+            
+            customer_leave = self._check_enhanced_customer_leave(
+                ticket_df, first_reply_found, final_reply_found, main_issue['question_time']
+            )
         
         analysis_result = {
             'issue_type': 'normal',
@@ -2020,21 +2103,6 @@ class ReplyAnalyzer:
         }
         
         print(f"   📊 Normal analysis: Final={final_reply_found}, Leave={customer_leave}")
-        
-        # DEBUG: Print jika tidak ditemukan final reply
-        if not final_reply_found:
-            print("   🔍 DEBUG: No final reply found. Checking operator messages...")
-            operator_messages = ticket_df[
-                (ticket_df['parsed_timestamp'] > main_issue['question_time']) &
-                (ticket_df['Role'].str.lower().str.contains('operator|agent|admin|cs', na=False))
-            ].sort_values('parsed_timestamp')
-            
-            if not operator_messages.empty:
-                print(f"   🔍 DEBUG: Found {len(operator_messages)} operator messages after question")
-                for idx, msg in operator_messages.iterrows():
-                    print(f"   🔍 DEBUG Operator msg: {msg['Message'][:100]}...")
-                    print(f"   🔍 DEBUG Contains solution: {self._contains_solution_keyword_extended(msg['Message'])}")
-                    print(f"   🔍 DEBUG Is closing pattern: {any(c in msg['Message'].lower() for c in config.CLOSING_PATTERNS)}")
         
         return analysis_result
 
@@ -2821,4 +2889,5 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
