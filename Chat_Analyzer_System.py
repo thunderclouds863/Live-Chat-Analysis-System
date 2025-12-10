@@ -2132,10 +2132,14 @@ class ReplyAnalyzer:
         has_reopened, reopened_time = self._has_ticket_reopened_with_time(ticket_df)
         
         if has_reopened:
+            is_claimed = self._has_claimed_after_reassigned(ticket_df, reopened_time)
             is_reassigned = self._has_reassigned_after_reopened(ticket_df, reopened_time)
             if is_reassigned:
                 print("   🔄 REOPENED but REASSIGNED - treating as NORMAL")
                 return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
+            else if is_claimed:
+                print("   🔄 REASSIGNED but CLAIMED - treating as NORMAL")
+                return self._analyze_enhanced_serious_replies(ticket_df, qa_pairs, main_issue)
             else:
                 print("   ⚠️  SERIOUS ticket detected (has reopened pattern without reassigned)")
                 
@@ -2170,7 +2174,23 @@ class ReplyAnalyzer:
             
         for _, row in after_reopened.iterrows():
             msg = str(row['Message']).lower()
-            if any(p in msg for p in ['reassigned to', 'claimed by system to']):
+            if any(p in msg for p in ['reassigned to']):
+                return True
+        return False
+
+    def _has_claimed_after_reassigned(self, ticket_df, reopened_time):
+        if reopened_time is None:
+            return False
+        
+        after_reopened = ticket_df[ticket_df['parsed_timestamp'] > reopened_time]
+        
+        # PERBAIKAN: Gunakan .empty untuk cek DataFrame
+        if after_reopened.empty:
+            return False
+            
+        for _, row in after_reopened.iterrows():
+            msg = str(row['Message']).lower()
+            if any(p in msg for p in ['claimed by system to']):
                 return True
         return False
 
@@ -2821,5 +2841,6 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
