@@ -2131,20 +2131,20 @@ class ReplyAnalyzer:
         
         has_reopened, reopened_time = self._has_ticket_reopened_with_time(ticket_df)
         
-if has_reopened:
-    is_claimed = self._has_claimed_after_reassigned(ticket_df, reopened_time)
-    is_reassigned = self._has_reassigned_after_reopened(ticket_df, reopened_time)
-    
-    if is_reassigned:
-        # Cek apakah masih ada percakapan setelah reassigned
-        has_conversation_after_reassigned = self._has_conversation_after_reassigned(ticket_df, reopened_time)
-        
-        if has_conversation_after_reassigned:
-            print("   🔄 REOPENED, REASSIGNED, but HAS MORE CONVERSATIONS - treating as SERIOUS")
-            return self._analyze_enhanced_serious_replies(ticket_df, qa_pairs, main_issue)
-        else:
-            print("   🔄 REOPENED and REASSIGNED - treating as NORMAL")
-            return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
+        if has_reopened:
+            is_claimed = self._has_claimed_after_reassigned(ticket_df, reopened_time)
+            is_reassigned = self._has_reassigned_after_reopened(ticket_df, reopened_time)
+            
+            if is_reassigned:
+                # Cek apakah masih ada percakapan setelah reassigned
+                has_conversation_after_reassigned = self._has_conversation_after_reassigned(ticket_df, reopened_time)
+                
+                if has_conversation_after_reassigned:
+                    print("   🔄 REOPENED, REASSIGNED, but HAS MORE CONVERSATIONS - treating as SERIOUS")
+                    return self._analyze_enhanced_serious_replies(ticket_df, qa_pairs, main_issue)
+                else:
+                    print("   🔄 REOPENED and REASSIGNED - treating as NORMAL")
+                    return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
     
             if is_claimed:
                 print("   🔄 REASSIGNED but CLAIMED - treating as SERIOUS (has continued conversation)")
@@ -2919,6 +2919,7 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
 
