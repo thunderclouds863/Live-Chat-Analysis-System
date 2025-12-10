@@ -2132,59 +2132,24 @@ class ReplyAnalyzer:
         has_reopened, reopened_time = self._has_ticket_reopened_with_time(ticket_df)
         
         if has_reopened:
-            is_claimed = self._has_claimed_after_reassigned(ticket_df, reopened_time)
             is_reassigned = self._has_reassigned_after_reopened(ticket_df, reopened_time)
-            
             if is_reassigned:
-                # Cek apakah masih ada percakapan setelah reassigned
-                has_conversation_after_reassigned = self._has_conversation_after_reassigned(ticket_df, reopened_time)
-                
-                if has_conversation_after_reassigned:
-                    print("   🔄 REOPENED, REASSIGNED, but HAS MORE CONVERSATIONS - treating as SERIOUS")
-                    return self._analyze_enhanced_serious_replies(ticket_df, qa_pairs, main_issue)
-                else:
-                    print("   🔄 REOPENED and REASSIGNED - treating as NORMAL")
-                    return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
-    
-            if is_claimed:
-                print("   🔄 REASSIGNED but CLAIMED - treating as SERIOUS (has continued conversation)")
-                return self._analyze_enhanced_serious_replies(ticket_df, qa_pairs, main_issue)
+                print("   🔄 REOPENED but REASSIGNED - treating as NORMAL")
+                return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
             else:
                 print("   ⚠️  SERIOUS ticket detected (has reopened pattern without reassigned)")
                 
                 serious_result = self._analyze_enhanced_serious_replies(ticket_df, qa_pairs, main_issue)
                 
-                # MODIFIKASI: Jika serious_result None atau final_reply None, cek customer leave
+                # PERBAIKAN: Cek dengan benar untuk None
                 if serious_result is None or serious_result.get('final_reply') is None:
-                    print("   🔄 SERIOUS failed (no final reply) - checking for customer leave...")
-                    
-                    # Gunakan method _check_enhanced_customer_leave yang sudah ada
-                    first_reply_found = serious_result.get('first_reply') is not None if serious_result else False
-                    final_reply_found = False  # Karena final_reply None
-                    
-                    customer_leave = self._check_enhanced_customer_leave(
-                        ticket_df, first_reply_found, final_reply_found, main_issue['question_time']
-                    )
-                    
-                    if customer_leave:
-                        print("   🚨 CUSTOMER LEAVE detected - returning customer leave result")
-                        # Return customer leave result
-                        return {
-                            'issue_type': 'serious_customer_leave',
-                            'first_reply': serious_result.get('first_reply') if serious_result else None,
-                            'final_reply': None,
-                            'customer_leave': True,
-                            'requirement_compliant': False,
-                            'note': 'Customer left without final reply'
-                        }
-                    else:
-                        print("   🔄 Not customer leave - falling back to NORMAL")
-                        return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
+                    print("   🔄 SERIOUS failed (no final reply) - falling back to NORMAL")
+                    return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
                 
                 return serious_result
         
-        #print("   ✅ NORMAL ticket detected")
-        #return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
+        print("   ✅ NORMAL ticket detected")
+        return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
 
     def _has_ticket_reopened_with_time(self, ticket_df):
         for _, row in ticket_df.iterrows():
@@ -2192,71 +2157,8 @@ class ReplyAnalyzer:
                 reopened_time = row['parsed_timestamp']
                 return True, reopened_time
         return False, None
-    
-    def _has_conversation_after_reassigned(self, ticket_df, reopened_time):
-        """
-        Cek apakah masih ada percakapan setelah reassigned.
-        Percakapan didefinisikan sebagai message yang bukan system message.
-        """
-        if reopened_time is None:
-            return False
-        
-        after_reopened = ticket_df[ticket_df['parsed_timestamp'] > reopened_time]
-        
-        if after_reopened.empty:
-            return False
-        
-        # Cari timestamp reassigned terakhir
-        last_reassigned_time = None
-        for _, row in after_reopened.iterrows():
-            msg = str(row['Message']).lower()
-            if any(p in msg for p in ['reassigned to']):
-                last_reassigned_time = row['parsed_timestamp']
-        
-        if last_reassigned_time is None:
-            return False
-        
-        # Cek apakah ada message setelah reassigned terakhir
-        after_last_reassigned = ticket_df[ticket_df['parsed_timestamp'] > last_reassigned_time]
-        
-        if after_last_reassigned.empty:
-            return False
-        
-        # Filter untuk message yang bukan system message
-        system_patterns = [
-            'reassigned to',
-            'claimed by',
-            'ticket has been reopened',
-            'ticket has been closed',
-            'status changed to'
-        ]
-        
-        for _, row in after_last_reassigned.iterrows():
-            msg = str(row['Message']).lower()
-            # Jika message tidak mengandung pattern system, berarti ada percakapan
-            if not any(pattern in msg for pattern in system_patterns):
-                return True
-        
-        return False
-    
-    def _has_reassigned_after_reopened(self, ticket_df, reopened_time):
-        if reopened_time is None:
-            return False
-        
-        after_reopened = ticket_df[ticket_df['parsed_timestamp'] > reopened_time]
-        
-        if after_reopened.empty:
-            return False
-        
-        reassigned_count = 0
-        for _, row in after_reopened.iterrows():
-            msg = str(row['Message']).lower()
-            if any(p in msg for p in ['reassigned to']):
-                reassigned_count += 1
-        
-        return reassigned_count > 0
 
-    def _has_claimed_after_reassigned(self, ticket_df, reopened_time):
+    def _has_reassigned_after_reopened(self, ticket_df, reopened_time):
         if reopened_time is None:
             return False
         
@@ -2268,7 +2170,7 @@ class ReplyAnalyzer:
             
         for _, row in after_reopened.iterrows():
             msg = str(row['Message']).lower()
-            if any(p in msg for p in ['claimed by system to']):
+            if any(p in msg for p in ['reassigned to', 'claimed by system to']):
                 return True
         return False
 
@@ -2919,3 +2821,4 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
