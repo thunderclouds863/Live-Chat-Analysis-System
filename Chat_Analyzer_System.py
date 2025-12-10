@@ -2131,21 +2131,21 @@ class ReplyAnalyzer:
         
         has_reopened, reopened_time = self._has_ticket_reopened_with_time(ticket_df)
         
-        if has_reopened:
-            is_claimed = self._has_claimed_after_reassigned(ticket_df, reopened_time)
-            is_reassigned = self._has_reassigned_after_reopened(ticket_df, reopened_time)
-            
-            if is_reassigned:
-                # Cek apakah masih ada percakapan setelah reassigned
-                has_conversation_after_reassigned = self._has_conversation_after_reassigned(ticket_df, reopened_time)
-                
-                if has_conversation_after_reassigned:
-                    print("   🔄 REOPENED, REASSIGNED, but HAS MORE CONVERSATIONS - treating as SERIOUS")
-                    return self._analyze_enhanced_serious_replies(ticket_df, qa_pairs, main_issue)
-                else:
-                    print("   🔄 REOPENED and REASSIGNED - treating as NORMAL")
-                    return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
-            
+if has_reopened:
+    is_claimed = self._has_claimed_after_reassigned(ticket_df, reopened_time)
+    is_reassigned = self._has_reassigned_after_reopened(ticket_df, reopened_time)
+    
+    if is_reassigned:
+        # Cek apakah masih ada percakapan setelah reassigned
+        has_conversation_after_reassigned = self._has_conversation_after_reassigned(ticket_df, reopened_time)
+        
+        if has_conversation_after_reassigned:
+            print("   🔄 REOPENED, REASSIGNED, but HAS MORE CONVERSATIONS - treating as SERIOUS")
+            return self._analyze_enhanced_serious_replies(ticket_df, qa_pairs, main_issue)
+        else:
+            print("   🔄 REOPENED and REASSIGNED - treating as NORMAL")
+            return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
+    
             if is_claimed:
                 print("   🔄 REASSIGNED but CLAIMED - treating as SERIOUS (has continued conversation)")
                 return self._analyze_enhanced_serious_replies(ticket_df, qa_pairs, main_issue)
@@ -2154,10 +2154,32 @@ class ReplyAnalyzer:
                 
                 serious_result = self._analyze_enhanced_serious_replies(ticket_df, qa_pairs, main_issue)
                 
-                # PERBAIKAN: Cek dengan benar untuk None
+                # MODIFIKASI: Jika serious_result None atau final_reply None, cek customer leave
                 if serious_result is None or serious_result.get('final_reply') is None:
-                    print("   🔄 SERIOUS failed (no final reply) - falling back to NORMAL")
-                    return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
+                    print("   🔄 SERIOUS failed (no final reply) - checking for customer leave...")
+                    
+                    # Gunakan method _check_enhanced_customer_leave yang sudah ada
+                    first_reply_found = serious_result.get('first_reply') is not None if serious_result else False
+                    final_reply_found = False  # Karena final_reply None
+                    
+                    customer_leave = self._check_enhanced_customer_leave(
+                        ticket_df, first_reply_found, final_reply_found, main_issue['question_time']
+                    )
+                    
+                    if customer_leave:
+                        print("   🚨 CUSTOMER LEAVE detected - returning customer leave result")
+                        # Return customer leave result
+                        return {
+                            'issue_type': 'serious_customer_leave',
+                            'first_reply': serious_result.get('first_reply') if serious_result else None,
+                            'final_reply': None,
+                            'customer_leave': True,
+                            'requirement_compliant': False,
+                            'note': 'Customer left without final reply'
+                        }
+                    else:
+                        print("   🔄 Not customer leave - falling back to NORMAL")
+                        return self._analyze_normal_replies(ticket_df, qa_pairs, main_issue)
                 
                 return serious_result
         
@@ -2897,6 +2919,7 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
 
