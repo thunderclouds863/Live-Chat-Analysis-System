@@ -1377,62 +1377,6 @@ def _format_lead_time_for_table(result):
     else:
         return "N/A"
 
-def display_enhanced_ticket_details(result):
-    """Display detailed information for a single ticket"""
-    
-    # Main Question
-    st.markdown("### 📝 Main Question")
-    st.markdown(f'<div class="message-box"><strong>Question:</strong> {result["main_question"]}</div>', unsafe_allow_html=True)
-    
-    # Inquiry Type dengan color coding
-    issue_type = result['final_issue_type']
-    issue_color = {
-        'normal': '#28a745',
-        'serious': '#dc3545', 
-        'complaint': '#ffc107'
-    }.get(issue_type, '#6c757d')
-    
-    st.markdown(f"""
-    <div style="background-color: {issue_color}; color: white; padding: 10px; border-radius: 5px; margin: 10px 0;">
-        <strong>Inquiry Type:</strong> {issue_type.upper()}
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Performance Metrics
-    st.markdown("#### 📊 Performance Metrics")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        performance_color = {
-            'excellent': '#28a745',
-            'good': '#007bff', 
-            'fair': '#ffc107',
-            'poor': '#dc3545'
-        }.get(result['performance_rating'], '#6c757d')
-        
-        st.markdown(f"""
-        <div style="background-color: {performance_color}; color: white; padding: 15px; border-radius: 10px; text-align: center;">
-            <h3 style="margin: 0; font-size: 1.2rem;">Performance</h3>
-            <h1 style="margin: 10px 0; font-size: 2.5rem;">{result['performance_rating'].upper()}</h1>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        quality_color = "#28a745" if result['quality_score'] >= 4 else "#ffc107" if result['quality_score'] >= 2 else "#dc3545"
-        st.markdown(f"""
-        <div style="background-color: {quality_color}; color: white; padding: 15px; border-radius: 10px; text-align: center;">
-            <h3 style="margin: 0; font-size: 1.2rem;">Quality Score</h3>
-            <h1 style="margin: 10px 0; font-size: 2.5rem;">{result['quality_score']}/6</h1>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.metric("Total Messages", result['total_messages'])
-    
-    with col4:
-        answer_rate = (result['answered_pairs'] / result['total_qa_pairs']) * 100 if result['total_qa_pairs'] > 0 else 0
-        st.metric("Answer Rate", f"{answer_rate:.1f}%")
-
 def display_performance_tab(results, stats):
     """Display performance analysis"""
     st.markdown("## 📊 Performance Analysis")
@@ -1665,5 +1609,6 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
 
 
