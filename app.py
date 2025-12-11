@@ -1177,7 +1177,188 @@ def display_issue_types_tab(results, stats):
                 display_enhanced_ticket_details(selected_result)
     else:
         st.info("No successful analyses to display")
-
+        
+def display_enhanced_ticket_details(result):
+    """Display detailed information for a single ticket dengan enhanced info"""
+    
+    # Main Question
+    st.markdown("### 📝 Main Question")
+    st.markdown(f'<div class="message-box"><strong>Question:</strong> {result["main_question"]}</div>', unsafe_allow_html=True)
+    
+    # Inquiry Type dengan color coding
+    issue_type = result['final_issue_type']
+    issue_color = {
+        'normal': '#28a745',
+        'serious': '#dc3545', 
+        'complaint': '#ffc107'
+    }.get(issue_type, '#6c757d')
+    
+    st.markdown(f"""
+    <div style="background-color: {issue_color}; color: white; padding: 10px; border-radius: 5px; margin: 10px 0;">
+        <strong>Inquiry Type:</strong> {issue_type.upper()}
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Special Notes
+    special_notes = []
+    if result.get('customer_leave'):
+        special_notes.append("🚶 **Customer Leave**: Detected by Ticket Automation")
+    
+    if special_notes:
+        st.markdown("#### 📌 Special Notes")
+        for note in special_notes:
+            st.markdown(f'<div class="special-case">{note}</div>', unsafe_allow_html=True)
+    
+    # Performance Metrics
+    st.markdown("#### 📊 Performance Metrics")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        performance_color = {
+            'excellent': '#28a745',
+            'good': '#007bff', 
+            'fair': '#ffc107',
+            'poor': '#dc3545'
+        }.get(result['performance_rating'], '#6c757d')
+        
+        st.markdown(f"""
+        <div style="background-color: {performance_color}; color: white; padding: 15px; border-radius: 10px; text-align: center;">
+            <h3 style="margin: 0; font-size: 1.2rem;">Performance</h3>
+            <h1 style="margin: 10px 0; font-size: 2.5rem;">{result['performance_rating'].upper()}</h1>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        quality_color = "#28a745" if result['quality_score'] >= 4 else "#ffc107" if result['quality_score'] >= 2 else "#dc3545"
+        st.markdown(f"""
+        <div style="background-color: {quality_color}; color: white; padding: 15px; border-radius: 10px; text-align: center;">
+            <h3 style="margin: 0; font-size: 1.2rem;">Quality Score</h3>
+            <h1 style="margin: 10px 0; font-size: 2.5rem;">{result['quality_score']}/6</h1>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.metric("Total Messages", result['total_messages'])
+    
+    with col4:
+        answer_rate = (result['answered_pairs'] / result['total_qa_pairs']) * 100 if result['total_qa_pairs'] > 0 else 0
+        st.metric("Answer Rate", f"{answer_rate:.1f}%")
+    
+    # Raw Data Access (if available) - INI YANG DIPULIHKAN
+    st.markdown("#### 🔧 Raw Analysis Data")
+    
+    if '_raw_qa_pairs' in result:
+        with st.expander("📋 Show Raw Q-A Pairs Conversation", expanded=False):
+            qa_data = []
+            for i, pair in enumerate(result['_raw_qa_pairs']):
+                qa_data.append({
+                    'Pair': i + 1,
+                    'Question': pair.get('question', ''),
+                    'Question Time': pair.get('question_time', 'N/A'),
+                    'Answered': '✅' if pair.get('is_answered') else '❌',
+                    'Answer': pair.get('answer', '')[:200] + '...' if pair.get('answer') and len(pair.get('answer', '')) > 200 else pair.get('answer', 'No Answer'),
+                    'Answer Time': pair.get('answer_time', 'N/A'),
+                    'Lead Time (min)': pair.get('lead_time_minutes', 'N/A')
+                })
+            
+            if qa_data:
+                df_qa = pd.DataFrame(qa_data)
+                st.dataframe(df_qa, use_container_width=True)
+                
+                # Summary
+                total_pairs = len(result['_raw_qa_pairs'])
+                answered_pairs = sum(1 for p in result['_raw_qa_pairs'] if p.get('is_answered'))
+                st.metric("Total Q-A Pairs", total_pairs)
+                st.metric("Answered Pairs", answered_pairs)
+                st.metric("Answer Rate", f"{(answered_pairs/total_pairs)*100:.1f}%" if total_pairs > 0 else "0%")
+            else:
+                st.info("No Q-A pairs data available")
+    else:
+        st.info("No raw Q-A pairs data available for this ticket")
+    
+    if '_raw_reply_analysis' in result:
+        with st.expander("🔍 Show Reply Analysis Details", expanded=False):
+            reply_analysis = result['_raw_reply_analysis']
+            
+            # Tampilkan dalam format yang lebih readable
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Basic Info**")
+                st.write(f"**Inquiry Type:** {reply_analysis.get('issue_type', 'N/A')}")
+                st.write(f"**Customer Leave:** {reply_analysis.get('customer_leave', False)}")
+                st.write(f"**Requirement Compliant:** {reply_analysis.get('requirement_compliant', False)}")
+                st.write(f"**Quality Score:** {reply_analysis.get('quality_score', 'N/A')}")
+            
+            with col2:
+                st.markdown("**Reply Status**")
+                st.write(f"**First Reply Found:** {reply_analysis.get('first_reply') is not None}")
+                st.write(f"**Final Reply Found:** {reply_analysis.get('final_reply') is not None}")
+                st.write(f"**First Reply Time:** {reply_analysis.get('first_reply_time', 'N/A')}")
+                st.write(f"**Final Reply Time:** {reply_analysis.get('final_reply_time', 'N/A')}")
+            
+            # First Reply Details
+            if reply_analysis.get('first_reply'):
+                st.markdown("**📞 First Reply Details**")
+                first_reply = reply_analysis['first_reply']
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    st.text_area("Message", first_reply.get('message', ''), height=100, disabled=True)
+                
+                with col2:
+                    st.write(f"**Lead Time:** {first_reply.get('lead_time_minutes', 'N/A')} min")
+                    st.write(f"**Note:** {first_reply.get('note', 'N/A')}")
+                    st.write(f"**Time:** {first_reply.get('timestamp', 'N/A')}")
+            
+            # Final Reply Details
+            if reply_analysis.get('final_reply'):
+                st.markdown("**✅ Final Reply Details**")
+                final_reply = reply_analysis['final_reply']
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    st.text_area("Message", final_reply.get('message', ''), height=100, disabled=True)
+                
+                with col2:
+                    if final_reply.get('lead_time_days'):
+                        st.write(f"**Lead Time:** {final_reply.get('lead_time_days')} days")
+                    else:
+                        st.write(f"**Lead Time:** {final_reply.get('lead_time_minutes', 'N/A')} min")
+                    st.write(f"**Note:** {final_reply.get('note', 'N/A')}")
+                    st.write(f"**Time:** {final_reply.get('timestamp', 'N/A')}")
+            
+            # Main Issue Detection
+            if reply_analysis.get('main_issue'):
+                st.markdown("**🎯 Main Issue Detection**")
+                main_issue = reply_analysis['main_issue']
+                st.write(f"**Question:** {main_issue.get('question', 'N/A')}")
+                st.write(f"**Detection Score:** {main_issue.get('detection_score', 'N/A')}")
+                st.write(f"**Detection Reason:** {main_issue.get('detection_reason', 'N/A')}")
+                st.write(f"**Question Time:** {main_issue.get('question_time', 'N/A')}")
+            
+            # Tampilkan JSON mentah hanya jika diminta
+            if st.checkbox("Show Raw JSON Data (Advanced)"):
+                st.json(reply_analysis)
+    else:
+        st.info("No detailed reply analysis data available")
+    
+    # Ticket Metadata
+    st.markdown("#### 🏷️ Ticket Metadata")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.write(f"**Ticket ID:** {result.get('ticket_id', 'N/A')}")
+        st.write(f"**Analysis Time:** {result.get('analysis_timestamp', 'N/A')}")
+    
+    with col2:
+        st.write(f"**First Reply Found:** {result['first_reply_found']}")
+        st.write(f"**Final Reply Found:** {result['final_reply_found']}")
+    
+    with col3:
+        st.write(f"**Customer Leave:** {result.get('customer_leave', False)}")
+        st.write(f"**Total QA Pairs:** {result.get('total_qa_pairs', 0)}")
+        
 def _format_lead_time_for_table(result):
     """Format lead time untuk tabel dalam dd:hh:mm:ss"""
     if result['final_issue_type'] == 'complaint' and result.get('final_reply_lead_time_days'):
@@ -1484,3 +1665,4 @@ if __name__ == "__main__":
         display_enhanced_results()
     else:
         main_interface()
+
