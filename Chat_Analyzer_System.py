@@ -267,72 +267,45 @@ class DataPreprocessor:
         return customer_info
 
     def match_complaint_tickets(self, raw_df, complaint_df):
-        """Match tickets antara raw data dan complaint data - DENGAN VALIDASI STRICT"""
+        """Match tickets antara raw data dan complaint data - DENGAN VALIDATION"""
         complaint_tickets = {}
         
-        # VALIDASI INPUT
+        # 🆕 VALIDATION: Check input data
         if raw_df is None or raw_df.empty:
+            print("❌ Raw data is None or empty for complaint matching")
             return complaint_tickets
             
         if complaint_df is None or complaint_df.empty:
+            print("⚠️ No complaint data provided")
             return complaint_tickets
         
         if 'Cleaned_Phone' not in complaint_df.columns:
+            print("⚠️ No Cleaned_Phone column in complaint data")
             return complaint_tickets
         
         try:
-            # Extract phones dengan metode yang diperbaiki
-            raw_phones = self._extract_phones_from_raw_data_improved(raw_df)
+            # Extract phones dari raw data
+            raw_phones = self._extract_phones_from_raw_data(raw_df)
             
-            # Buat mapping reverse untuk cepat
-            phone_to_tickets = defaultdict(list)
-            for ticket_id, info in raw_phones.items():
-                if info['phone']:
-                    # Normalisasi nomor telepon
-                    normalized_phone = self._normalize_phone(info['phone'])
-                    phone_to_tickets[normalized_phone].append(ticket_id)
-            
-            # Proses matching
             for _, complaint_row in complaint_df.iterrows():
-                complaint_phone = str(complaint_row['Cleaned_Phone'])
+                complaint_phone = complaint_row['Cleaned_Phone']
                 
                 if pd.isna(complaint_phone) or complaint_phone == 'nan':
                     continue
-                
-                # Normalisasi nomor complaint
-                normalized_complaint = self._normalize_phone(complaint_phone)
-                
-                # EXACT MATCHING dengan fallback
+                    
+                # Cari matching phone di raw data
                 matching_tickets = []
-                
-                # 1. Exact match
-                if normalized_complaint in phone_to_tickets:
-                    matching_tickets = phone_to_tickets[normalized_complaint]
-                else:
-                    # 2. Cek tanpa prefix (jika ada 62/0)
-                    if normalized_complaint.startswith('62'):
-                        without_62 = normalized_complaint[2:]  # Hilangkan 62
-                        if without_62 in phone_to_tickets:
-                            matching_tickets = phone_to_tickets[without_62]
-                    elif normalized_complaint.startswith('0'):
-                        without_0 = normalized_complaint[1:]  # Hilangkan 0
-                        if without_0 in phone_to_tickets:
-                            matching_tickets = phone_to_tickets[without_0]
-                
-                # 3. Validasi tambahan: minimal 10 digit sama
-                if not matching_tickets:
-                    for phone, tickets in phone_to_tickets.items():
-                        if self._phones_similar(normalized_complaint, phone, min_similar_digits=10):
-                            matching_tickets = tickets
-                            break
+                for ticket_id, phone_info in raw_phones.items():
+                    if phone_info['phone'] and complaint_phone in phone_info['phone']:
+                        matching_tickets.append(ticket_id)
                 
                 if matching_tickets:
-                    complaint_tickets[normalized_complaint] = {
+                    complaint_tickets[complaint_phone] = {
                         'ticket_numbers': matching_tickets,
                         'lead_time_days': complaint_row.get('Lead Time (Solved)'),
                         'complaint_data': complaint_row.to_dict()
                     }
-                    print(f"✅ Matched phone {normalized_complaint} with tickets: {matching_tickets}")
+                    print(f"✅ Matched phone {complaint_phone} with tickets: {matching_tickets}")
             
             print(f"📊 Found {len(complaint_tickets)} complaint-ticket matches")
             return complaint_tickets
@@ -340,38 +313,6 @@ class DataPreprocessor:
         except Exception as e:
             print(f"❌ Error in complaint matching: {e}")
             return complaint_tickets
-    
-    def _normalize_phone(self, phone_str):
-        """Normalisasi nomor telepon"""
-        if pd.isna(phone_str):
-            return ""
-        
-        # Clean semua non-digit
-        cleaned = re.sub(r'\D', '', str(phone_str))
-        
-        # Normalisasi format Indonesia
-        if cleaned.startswith('0'):
-            cleaned = '62' + cleaned[1:]
-        elif cleaned.startswith('8'):
-            cleaned = '62' + cleaned
-        
-        return cleaned
-    
-    def _phones_similar(self, phone1, phone2, min_similar_digits=10):
-        """Cek kesamaan nomor telepon"""
-        # Bersihkan kedua nomor
-        clean1 = re.sub(r'\D', '', str(phone1))
-        clean2 = re.sub(r'\D', '', str(phone2))
-        
-        # Cek jika salah satu merupakan substring dari yang lain dengan minimal digit
-        if len(clean1) >= min_similar_digits and len(clean2) >= min_similar_digits:
-            # Cari overlap terpanjang
-            for i in range(len(clean1) - min_similar_digits + 1):
-                substring = clean1[i:i+min_similar_digits]
-                if substring in clean2:
-                    return True
-        
-        return False
         
     def _extract_phones_from_raw_data(self, df):
         """Extract phone numbers dari raw data - DIPERBAIKI"""
@@ -2967,6 +2908,4 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
-
-
 
