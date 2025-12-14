@@ -267,206 +267,78 @@ class DataPreprocessor:
         return customer_info
 
     def match_complaint_tickets(self, raw_df, complaint_df):
-        """ULTRA SIMPLE MATCHING - HARDCODE SEMUA"""
-        print(f"🔍 ULTRA SIMPLE MATCHING - NO EXCUSES!")
-        
+        """Match tickets antara raw data dan complaint data - DENGAN VALIDATION"""
         complaint_tickets = {}
-        match_count = 0
         
-        # ========== DEBUG DULU ==========
-        print(f"\n📄 RAW DATA COLUMNS (FIRST 10):")
-        for i, col in enumerate(raw_df.columns.tolist()[:10]):
-            print(f"  {i+1}. '{col}'")
-        
-        print(f"\n📄 COMPLAINT DATA COLUMNS (FIRST 10):")
-        for i, col in enumerate(complaint_df.columns.tolist()[:10]):
-            print(f"  {i+1}. '{col}'")
-        
-        # ========== HARDCODE KOLOM ==========
-        # HARDCODE INI BERDASARKAN KOLOM YANG KAMU LIHAT DI ATAS!
-        
-        # Kolom phone di raw_conversation.xlsx - TEBAK SEMUA KEMUNGKINAN
-        RAW_PHONE_COLUMNS = [
-            'Customer Phone',      # Coba ini
-            'Phone',               # Atau ini
-            'Handphone',           # Atau ini  
-            'No. HP',              # Atau ini
-            'Telepon',             # Atau ini
-            'Mobile',              # Atau ini
-            'Contact',             # Atau ini
-            'Sender',              # Mungkin di Sender
-            'Message',             # Mungkin di Message
-        ]
-        
-        # Kolom phone di complaint_data.xlsx - TEBAK SEMUA KEMUNGKINAN
-        COMPLAINT_PHONE_COLUMNS = [
-            'No.Handphone',        # Ini biasanya
-            'No. Handphone',       # Atau ini
-            'Handphone',           # Atau ini
-            'Phone',               # Atau ini
-            'Telepon',             # Atau ini
-            'Mobile',              # Atau ini
-            'Contact',             # Atau ini
-        ]
-        
-        # ========== CARI KOLOM PHONE DI RAW DATA ==========
-        raw_phone_col = None
-        for col in RAW_PHONE_COLUMNS:
-            if col in raw_df.columns:
-                raw_phone_col = col
-                print(f"\n✅ FOUND RAW PHONE COLUMN: '{raw_phone_col}'")
-                
-                # TAMPILKAN 5 SAMPLE
-                sample_phones = raw_df[[raw_phone_col, 'Ticket Number']].dropna().head(5)
-                print(f"   Sample phones from '{raw_phone_col}':")
-                for _, row in sample_phones.iterrows():
-                    print(f"     Ticket {row['Ticket Number']}: '{row[raw_phone_col]}'")
-                break
-        
-        if not raw_phone_col:
-            print(f"\n❌ NO RAW PHONE COLUMN FOUND!")
-            print(f"   Available columns: {raw_df.columns.tolist()}")
-            return {}
-        
-        # ========== CARI KOLOM PHONE DI COMPLAINT ==========
-        complaint_phone_col = None
-        for col in COMPLAINT_PHONE_COLUMNS:
-            if col in complaint_df.columns:
-                complaint_phone_col = col
-                print(f"\n✅ FOUND COMPLAINT PHONE COLUMN: '{complaint_phone_col}'")
-                
-                # TAMPILKAN 5 SAMPLE
-                sample_complaints = complaint_df[[complaint_phone_col]].dropna().head(5)
-                print(f"   Sample phones from '{complaint_phone_col}':")
-                for idx, row in sample_complaints.iterrows():
-                    print(f"     Complaint #{idx}: '{row[complaint_phone_col]}'")
-                break
-        
-        if not complaint_phone_col:
-            print(f"\n❌ NO COMPLAINT PHONE COLUMN FOUND!")
-            print(f"   Available columns: {complaint_df.columns.tolist()}")
-            return {}
-        
-        # ========== KUMPULKAN SEMUA PHONE DARI RAW DATA ==========
-        print(f"\n📱 COLLECTING ALL PHONES FROM RAW DATA...")
-        raw_phone_dict = {}  # ticket_id -> phone
-        
-        for ticket_id in raw_df['Ticket Number'].unique():
-            ticket_rows = raw_df[raw_df['Ticket Number'] == ticket_id]
+        # 🆕 VALIDATION: Check input data
+        if raw_df is None or raw_df.empty:
+            print("❌ Raw data is None or empty for complaint matching")
+            return complaint_tickets
             
-            # Cari phone di semua baris ticket ini
-            found_phone = None
-            for _, row in ticket_rows.iterrows():
-                phone_val = row.get(raw_phone_col)
+        if complaint_df is None or complaint_df.empty:
+            print("⚠️ No complaint data provided")
+            return complaint_tickets
+        
+        if 'Cleaned_Phone' not in complaint_df.columns:
+            print("⚠️ No Cleaned_Phone column in complaint data")
+            return complaint_tickets
+        
+        try:
+            # Extract phones dari raw data
+            raw_phones = self._extract_phones_from_raw_data(raw_df)
+            
+            for _, complaint_row in complaint_df.iterrows():
+                complaint_phone = complaint_row['Cleaned_Phone']
                 
-                if pd.isna(phone_val):
+                if pd.isna(complaint_phone) or complaint_phone == 'nan':
                     continue
                     
-                phone_str = str(phone_val).strip()
+                # Cari matching phone di raw data
+                matching_tickets = []
+                for ticket_id, phone_info in raw_phones.items():
+                    if phone_info['phone'] and complaint_phone in phone_info['phone']:
+                        matching_tickets.append(ticket_id)
                 
-                # Cek minimal ada angka
-                if any(char.isdigit() for char in phone_str) and len(phone_str) > 5:
-                    found_phone = phone_str
-                    break
-            
-            if found_phone:
-                raw_phone_dict[ticket_id] = found_phone
-                print(f"   Ticket {ticket_id}: '{found_phone}'")
-        
-        print(f"📊 Found {len(raw_phone_dict)} tickets with phone numbers")
-        
-        # ========== CARI MATCH ==========
-        print(f"\n🔍 LOOKING FOR MATCHES...")
-        
-        for idx, complaint_row in complaint_df.iterrows():
-            complaint_phone_raw = complaint_row.get(complaint_phone_col)
-            
-            if pd.isna(complaint_phone_raw):
-                continue
-                
-            complaint_phone = str(complaint_phone_raw).strip()
-            print(f"\nChecking complaint #{idx}: '{complaint_phone}'")
-            
-            # CARI TICKET YANG PHONE-NYA SAMA
-            matched_tickets = []
-            
-            for ticket_id, raw_phone in raw_phone_dict.items():
-                # SIMPLE COMPARISON - MULTIPLE METHODS
-                
-                # Method 1: Exact string match
-                if complaint_phone == raw_phone:
-                    matched_tickets.append(ticket_id)
-                    print(f"   ✅ EXACT MATCH: Ticket {ticket_id}")
-                    continue
-                    
-                # Method 2: Remove whitespace and compare
-                clean_complaint = re.sub(r'\s+', '', complaint_phone)
-                clean_raw = re.sub(r'\s+', '', raw_phone)
-                
-                if clean_complaint == clean_raw:
-                    matched_tickets.append(ticket_id)
-                    print(f"   ✅ CLEAN MATCH: Ticket {ticket_id}")
-                    continue
-                    
-                # Method 3: Extract digits only and compare
-                digits_complaint = re.sub(r'\D', '', complaint_phone)
-                digits_raw = re.sub(r'\D', '', raw_phone)
-                
-                if digits_complaint and digits_raw and digits_complaint == digits_raw:
-                    matched_tickets.append(ticket_id)
-                    print(f"   ✅ DIGIT MATCH: Ticket {ticket_id}")
-                    continue
-                    
-                # Method 4: Check if one contains the other
-                if complaint_phone in raw_phone or raw_phone in complaint_phone:
-                    matched_tickets.append(ticket_id)
-                    print(f"   ✅ CONTAINS MATCH: Ticket {ticket_id}")
-                    continue
-            
-            # SIMPAN HASIL
-            if matched_tickets:
-                for ticket_id in matched_tickets:
-                    complaint_tickets[ticket_id] = {
-                        'complaint_phone': complaint_phone,
-                        'raw_phone': raw_phone_dict[ticket_id],
-                        'lead_time_days': complaint_row.get('Lead Time (Solved)', 'N/A'),
+                if matching_tickets:
+                    complaint_tickets[complaint_phone] = {
+                        'ticket_numbers': matching_tickets,
+                        'lead_time_days': complaint_row.get('Lead Time (Solved)'),
                         'complaint_data': complaint_row.to_dict()
                     }
-                    match_count += 1
-                    print(f"   💾 SAVED: Ticket {ticket_id} marked as COMPLAINT")
-            else:
-                print(f"   ❌ NO MATCH FOUND for '{complaint_phone}'")
+                    print(f"✅ Matched phone {complaint_phone} with tickets: {matching_tickets}")
+            
+            print(f"📊 Found {len(complaint_tickets)} complaint-ticket matches")
+            return complaint_tickets
+            
+        except Exception as e:
+            print(f"❌ Error in complaint matching: {e}")
+            return complaint_tickets
         
-        # ========== HASIL AKHIR ==========
-        print(f"\n" + "="*80)
-        print(f"🎯 FINAL MATCHING RESULT")
-        print(f"   Total complaints processed: {len(complaint_df)}")
-        print(f"   Total matches found: {match_count}")
-        print(f"   Match rate: {match_count/len(complaint_df)*100:.1f}%")
-        print("="*80)
+    def _extract_phones_from_raw_data(self, df):
+        """Extract phone numbers dari raw data"""
+        phone_info = {}
         
-        if complaint_tickets:
-            print(f"\n📋 MATCHED COMPLAINT TICKETS:")
-            for ticket_id, info in complaint_tickets.items():
-                print(f"  • Ticket {ticket_id}")
-                print(f"    Raw phone: '{info['raw_phone']}'")
-                print(f"    Complaint phone: '{info['complaint_phone']}'")
-                print(f"    Lead time: {info['lead_time_days']} days")
-        else:
-            print(f"\n⚠️  WARNING: NO COMPLAINT TICKETS MATCHED!")
-            print(f"   Check if phone numbers actually match between files")
+        for ticket_id in df['Ticket Number'].unique():
+            ticket_df = df[df['Ticket Number'] == ticket_id]
+            
+            phone = None
+            # Cari phone number di semua kolom teks
+            for col in ticket_df.columns:
+                if pd.api.types.is_string_dtype(ticket_df[col]):
+                    phone_patterns = [r'\b\d{4}[-.\s]?\d{4}[-.\s]?\d{4}\b', r'\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b']
+                    for pattern in phone_patterns:
+                        matches = ticket_df[col].astype(str).str.extract(f'({pattern})', expand=False)
+                        if not matches.isna().all():
+                            phone = matches.dropna().iloc[0] if not matches.dropna().empty else None
+                            if phone:
+                                phone = re.sub(r'\D', '', phone)  # Clean phone
+                                break
+                if phone:
+                    break
+            
+            phone_info[ticket_id] = {'phone': phone}
         
-        return complaint_tickets
-                
-    def _add_complaint_match(self, complaint_tickets, complaint_phone, matching_tickets, complaint_row):
-        """Helper untuk menambahkan match, menghindari duplikasi"""
-        # HANYA TAMBAHKAN JIKA BELUM ADA
-        if complaint_phone not in complaint_tickets:
-            complaint_tickets[complaint_phone] = {
-                'ticket_numbers': matching_tickets,
-                'lead_time_days': complaint_row.get('Lead Time (Solved)'),
-                'complaint_data': complaint_row.to_dict()
-            }
+        return phone_info
 
 # Conversation Parser dengan Logic Baru
 class ConversationParser:
@@ -3017,6 +2889,7 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
 
