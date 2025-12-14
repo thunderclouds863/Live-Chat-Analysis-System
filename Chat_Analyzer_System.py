@@ -267,104 +267,68 @@ class DataPreprocessor:
         return customer_info
 
     def match_complaint_tickets(self, raw_df, complaint_df):
-        """Match tickets dengan validasi ketat"""
+        """Match tickets antara raw data dan complaint data - DENGAN PENCocOKAN KETAT"""
         complaint_tickets = {}
         
+        # [Penghilangan kode validasi untuk fokus pada core logic]
+        # ...
+        
         try:
-            # Extract phones dengan metode yang diperbaiki
-            raw_phones = self._extract_phones_from_raw_data_improved(raw_df)
+            # Extract phones dari raw data (SUDAH DINORMALISASI di versi perbaikan)
+            raw_phones = self._extract_phones_from_raw_data(raw_df)
             
-            # Buat dictionary untuk lookup cepat
-            phone_to_tickets = {}
-            for ticket_id, info in raw_phones.items():
-                if info['phone']:
-                    phone = info['phone']
-                    # Simpan full number untuk exact match
-                    phone_to_tickets.setdefault(phone, []).append(ticket_id)
-                    
-                    # Juga simpan 10 digit terakhir untuk partial match
-                    if len(phone) > 10:
-                        last_10 = phone[-10:]
-                        phone_to_tickets.setdefault(last_10, []).append(ticket_id)
+            # Buat kamus untuk pencarian cepat: {cleaned_phone: [ticket_id1, ...]}
+            # Normalisasi phones dari raw_data ke format standard (misal: 08xxxxxxxxxx)
+            normalized_raw_phones = defaultdict(list)
+            for ticket_id, phone_info in raw_phones.items():
+                if phone_info['phone']:
+                    normalized_raw_phones[phone_info['phone']].append(ticket_id)
             
-            # Proses complaint data
-            match_count = 0
-            
+            # Normalisasi phones dari complaint_df ke format standard (misal: 08xxxxxxxxxx)
+            complaint_phones_map = {}
             for _, complaint_row in complaint_df.iterrows():
-                complaint_phone_raw = complaint_row['No.Handphone']  # Pastikan nama kolom benar
+                complaint_phone_raw = complaint_row['Cleaned_Phone']
                 
-                if pd.isna(complaint_phone_raw):
+                if pd.isna(complaint_phone_raw) or complaint_phone_raw == 'nan':
                     continue
+                
+                # Normalisasi phone dari complaint: hapus non-digit
+                complaint_phone_clean = re.sub(r'\D', '', str(complaint_phone_raw))
+                if complaint_phone_clean.startswith('62'):
+                    complaint_phone_standard = '0' + complaint_phone_clean[2:]
+                elif not complaint_phone_clean.startswith('0'):
+                    complaint_phone_standard = '0' + complaint_phone_clean # Asumsikan 0
+                else:
+                    complaint_phone_standard = complaint_phone_clean
+
+                # PENCocOKAN KETAT
+                
+                # 1. Coba pencocokan FULL NUMBER standard
+                if complaint_phone_standard in normalized_raw_phones:
+                    matching_tickets = normalized_raw_phones[complaint_phone_standard]
+                    # Simpan informasi complaint (gunakan phone aslinya dari complaint)
+                    self._add_complaint_match(complaint_tickets, complaint_phone_raw, matching_tickets, complaint_row)
+                    print(f"✅ Matched phone {complaint_phone_raw} with tickets: {matching_tickets} (Full Match)")
+                    continue
+
+                # 2. Coba pencocokan 8 digit terakhir (untuk mengatasi variasi awalan/panjang)
+                if len(complaint_phone_standard) >= 8:
+                    complaint_last_8 = complaint_phone_standard[-8:]
                     
-                # Normalisasi phone number dari complaint
-                complaint_phone = self._normalize_phone(complaint_phone_raw)
-                
-                if not complaint_phone or len(complaint_phone) < 10:
-                    continue
-                
-                # Cari match dengan prioritas:
-                # 1. EXACT MATCH (full number)
-                if complaint_phone in phone_to_tickets:
-                    matching_tickets = phone_to_tickets[complaint_phone]
-                    self._add_complaint_match(complaint_tickets, complaint_phone, matching_tickets, complaint_row)
-                    match_count += 1
-                    print(f"✅ EXACT MATCH: {complaint_phone} -> {matching_tickets}")
-                    continue
-                
-                # 2. PARTIAL MATCH (10 digit terakhir)
-                if len(complaint_phone) >= 10:
-                    last_10_digits = complaint_phone[-10:]
-                    if last_10_digits in phone_to_tickets:
-                        matching_tickets = phone_to_tickets[last_10_digits]
-                        # Validasi: nomor raw harus sama panjang atau beda hanya di prefix
-                        valid_tickets = []
-                        for ticket_id in matching_tickets:
-                            raw_phone = raw_phones[ticket_id]['phone']
-                            if raw_phone and raw_phone[-10:] == last_10_digits:
-                                valid_tickets.append(ticket_id)
-                        
-                        if valid_tickets:
-                            self._add_complaint_match(complaint_tickets, complaint_phone, valid_tickets, complaint_row)
-                            match_count += 1
-                            print(f"✅ PARTIAL MATCH (last 10): {complaint_phone} -> {valid_tickets}")
-                            continue
-                
-                print(f"❌ NO MATCH for complaint phone: {complaint_phone}")
-            
-            print(f"📊 TOTAL MATCHES: {match_count}/{len(complaint_df)} complaint records matched")
-            
+                    for raw_phone_standard, raw_tickets in normalized_raw_phones.items():
+                        if raw_phone_standard.endswith(complaint_last_8):
+                            # Jika match 8 digit terakhir, dan panjangnya sama-sama masuk akal (beda max 3 digit)
+                            if 10 <= len(raw_phone_standard) <= 15:
+                                self._add_complaint_match(complaint_tickets, complaint_phone_raw, raw_tickets, complaint_row)
+                                print(f"✅ Matched phone {complaint_phone_raw} with tickets: {raw_tickets} (Last 8 Digits Match)")
+                                break # Stop setelah match pertama
+                    
+            print(f"📊 Found {len(complaint_tickets)} complaint-ticket matches")
             return complaint_tickets
             
         except Exception as e:
             print(f"❌ Error in complaint matching: {e}")
             return complaint_tickets
-    
-    def _normalize_phone(self, phone_str):
-        """Normalisasi phone number ke format standard"""
-        if pd.isna(phone_str):
-            return None
-        
-        # Hapus semua non-digit
-        digits = re.sub(r'\D', '', str(phone_str))
-        
-        if not digits:
-            return None
-        
-        # Normalisasi ke format Indonesia (0xxxxxxxxxx)
-        if digits.startswith('62'):
-            normalized = '0' + digits[2:]
-        elif digits.startswith('8'):
-            normalized = '0' + digits
-        elif not digits.startswith('0'):
-            normalized = '0' + digits
-        else:
-            normalized = digits
-        
-        # Validasi panjang (minimal 10 digit untuk Indonesia)
-        if len(normalized) < 10:
-            return None
-        
-        return normalized
             
     def _add_complaint_match(self, complaint_tickets, complaint_phone, matching_tickets, complaint_row):
         """Helper untuk menambahkan match, menghindari duplikasi"""
@@ -377,59 +341,41 @@ class DataPreprocessor:
             }
         
     def _extract_phones_from_raw_data(self, df):
-        """Extract phone numbers dari raw data dengan validasi ketat"""
-        phone_info = {}
-        
-        # Tentukan kolom yang mungkin berisi phone number
-        possible_phone_columns = ['Customer Phone']
-        
-        for ticket_id in df['Ticket Number'].unique():
-            ticket_df = df[df['Ticket Number'] == ticket_id]
-            phone = None
+            """Extract phone numbers dari raw data dengan normalisasi"""
+            phone_info = {}
             
-            # Cari hanya di kolom yang relevan
-            for col in possible_phone_columns:
-                if col in ticket_df.columns:
-                    for _, row in ticket_df.iterrows():
-                        if pd.isna(row[col]):
-                            continue
-                            
-                        text = str(row[col])
-                        
-                        # Pattern yang lebih spesifik untuk phone number Indonesia
-                        patterns = [
-                            r'(?<!\d)(?:\+?62|0)(?:\d{2,3}[-.\s]?)?\d{3,4}[-.\s]?\d{3,4}[-.\s]?\d{3,4}(?!\d)',  # Format lengkap
-                            r'(?<!\d)08\d{2}[-.\s]?\d{4}[-.\s]?\d{4}(?!\d)',  # Format 08xx xxxx xxxx
-                            r'(?<!\d)08\d{9,10}(?!\d)',  # Format 08xxxxxxxxx
-                        ]
-                        
-                        for pattern in patterns:
-                            matches = re.findall(pattern, text)
-                            if matches:
-                                # Ambil match pertama, normalisasi
-                                phone_raw = matches[0]
-                                phone_clean = re.sub(r'\D', '', phone_raw)
-                                
-                                # Normalisasi ke format 08xxxxxxxxxx
-                                if phone_clean.startswith('62'):
-                                    phone_clean = '0' + phone_clean[2:]
-                                elif not phone_clean.startswith('0'):
-                                    phone_clean = '0' + phone_clean
-                                
-                                # Validasi panjang (10-13 digit untuk Indonesia)
-                                if 10 <= len(phone_clean) <= 13:
-                                    phone = phone_clean
-                                    print(f"   📱 Found phone {phone} in ticket {ticket_id}, column {col}")
-                                    break
-                        
+            for ticket_id in df['Ticket Number'].unique():
+                ticket_df = df[df['Ticket Number'] == ticket_id]
+                
+                phone = None
+                # Cari phone number di semua kolom teks
+                for col in ticket_df.columns:
+                    if pd.api.types.is_string_dtype(ticket_df[col]):
+                        # Lebih spesifik: mencari 10-15 digit
+                        phone_patterns = [r'\b\d{10,15}\b', r'\b\d{4}[-.\s]?\d{4}[-.\s]?\d{4,7}\b'] 
+                        for pattern in phone_patterns:
+                            matches = ticket_df[col].astype(str).str.extract(f'({pattern})', expand=False)
+                            if not matches.isna().all():
+                                phone_raw = matches.dropna().iloc[0] if not matches.dropna().empty else None
+                                if phone_raw:
+                                    # Normalisasi: hapus non-digit, hapus awalan '62' atau '0' untuk standar
+                                    phone_clean = re.sub(r'\D', '', phone_raw)
+                                    if phone_clean.startswith('62'):
+                                        phone_clean = '0' + phone_clean[2:]
+                                    elif not phone_clean.startswith('0'):
+                                        phone_clean = '0' + phone_clean # Asumsikan 0
+    
+                                    # HANYA SIMPAN JIKA PANJANGNYA MASUK AKAL (min 10 digit, max 15 digit)
+                                    if 10 <= len(phone_clean) <= 15:
+                                        phone = phone_clean
+                                        break
                         if phone:
                             break
-                    if phone:
-                        break
+                
+                phone_info[ticket_id] = {'phone': phone}
             
-            phone_info[ticket_id] = {'phone': phone}
-        
-        return phone_info
+            return phone_info
+
 # Conversation Parser dengan Logic Baru
 class ConversationParser:
     def __init__(self):
@@ -2979,6 +2925,4 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
-
-
 
