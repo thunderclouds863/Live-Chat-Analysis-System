@@ -315,48 +315,35 @@ class DataPreprocessor:
             return complaint_tickets
         
     def _extract_phones_from_raw_data(self, df):
-        """Extract phone numbers dari raw data - DIPERBAIKI"""
         phone_info = {}
-        
+    
         for ticket_id in df['Ticket Number'].unique():
-            ticket_df = df[df['Ticket Number'] == ticket_id]
-            
+            ticket_df = df[df['Ticket Number'] == ticket_id].sort_values('parsed_timestamp')
+    
             phone = None
-            
-            # PRIORITAS 1: Cari di kolom 'Sender' atau 'Customer Phone'
-            priority_columns = ['Sender', 'Customer Phone', 'Phone', 'CustomerPhone', 'Customer_Phone']
-            
-            for col in priority_columns:
+    
+            # 1️⃣ Metadata column only
+            for col in ['Customer Phone', 'CustomerPhone', 'Customer_Phone']:
                 if col in ticket_df.columns:
-                    phone_candidates = ticket_df[col].astype(str).str.extractall(r'(\d{10,13})')
-                    if not phone_candidates.empty:
-                        # Ambil nomor pertama yang ditemukan
-                        phone = phone_candidates[0].iloc[0]
-                        phone = re.sub(r'\D', '', phone)  # Clean
+                    candidates = ticket_df[col].astype(str).str.extract(r'(\d{10,13})')[0].dropna()
+                    if not candidates.empty:
+                        phone = re.sub(r'\D', '', candidates.iloc[0])
                         break
-            
-            # PRIORITAS 2: Cari di semua kolom (fallback)
+    
+            # 2️⃣ Fallback: pesan CUSTOMER PERTAMA SAJA
             if not phone:
-                for col in ticket_df.columns:
-                    if pd.api.types.is_string_dtype(ticket_df[col]):
-                        phone_patterns = [r'\b\d{10,13}\b']  # Hanya nomor 10-13 digit
-                        for pattern in phone_patterns:
-                            matches = ticket_df[col].astype(str).str.extract(f'({pattern})', expand=False)
-                            if not matches.isna().all():
-                                valid_matches = matches.dropna()
-                                # Filter: nomor harus mengandung 62 atau 08 (format Indonesia)
-                                for match in valid_matches:
-                                    clean_match = re.sub(r'\D', '', match)
-                                    if len(clean_match) >= 10 and (clean_match.startswith('62') or clean_match.startswith('08')):
-                                        phone = clean_match
-                                        break
-                            if phone:
-                                break
-                    if phone:
-                        break
-            
+                first_customer_msg = ticket_df[
+                    ticket_df['Role'].str.lower().str.contains('customer', na=False)
+                ].head(1)
+    
+                if not first_customer_msg.empty:
+                    msg = first_customer_msg.iloc[0]['Message']
+                    match = re.search(r'\b(62|08)\d{8,11}\b', str(msg))
+                    if match:
+                        phone = match.group()
+    
             phone_info[ticket_id] = {'phone': phone}
-        
+    
         return phone_info
 
 # Conversation Parser dengan Logic Baru
@@ -2908,4 +2895,5 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
