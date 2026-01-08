@@ -1737,7 +1737,7 @@ class ReplyAnalyzer:
         # 1. Operator sudah memberikan greeting
         # 2. Tidak ada interaksi customer setelah greeting
         # 3. Tidak ada interaksi operator meaningful setelah greeting
-        # 4. Tidak masalah apakah final_reply_found atau tidak
+        # 4. Jika final_reply_found = True, maka BUKAN customer leave (operator sudah menjawab)
         
         # PERBAIKAN: Cek apakah ini reopened ticket
         has_reopened = self._has_ticket_reopened_with_time(ticket_df)[0]
@@ -1745,16 +1745,18 @@ class ReplyAnalyzer:
         if has_reopened:
             print("   🔄 Ticket has reopened pattern - using relaxed customer leave detection")
             # Untuk reopened tickets, fokus pada apakah customer merespons setelah greeting terakhir
-            is_true_leave = (
-                len(customer_interactions) == 0 and 
-                len(operator_interactions) == 0
-            )
-        else:
-            # Untuk normal tickets, gunakan logika strict
+            # TETAPI tetap perhatikan jika operator sudah memberikan final reply
             is_true_leave = (
                 len(customer_interactions) == 0 and 
                 len(operator_interactions) == 0 and
-                not final_reply_found
+                not final_reply_found  # ← TAMBAHKAN INI
+            )
+        else:
+            # Untuk normal tickets
+            is_true_leave = (
+                len(customer_interactions) == 0 and 
+                len(operator_interactions) == 0 and
+                not final_reply_found  # ← INI SUDAH ADA, tetap pertahankan
             )
         
         if is_true_leave:
@@ -1767,8 +1769,8 @@ class ReplyAnalyzer:
                 print("   ✅ NOT customer leave: Customer responded after greeting")
             elif len(operator_interactions) > 0:
                 print("   ✅ NOT customer leave: Operator continued conversation")
-            elif not has_reopened and final_reply_found:
-                print("   ✅ NOT customer leave: Final reply was provided")
+            elif final_reply_found:  # ← PERBAIKI PENJELASAN DI SINI
+                print("   ✅ NOT customer leave: Final reply was provided by operator")
             else:
                 print("   ❓ Borderline case - reviewing...")
                 
@@ -2889,6 +2891,7 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
 
