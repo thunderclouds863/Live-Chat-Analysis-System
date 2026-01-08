@@ -1710,6 +1710,8 @@ class ReplyAnalyzer:
         leave_time = leave_message['parsed_timestamp']
         
         print(f"   ⏰ Found automation leave message at: {leave_time}")
+        print(f"   📊 DEBUG - final_reply_found parameter: {final_reply_found}")
+        print(f"   📊 DEBUG - first_reply_found parameter: {first_reply_found}")
         
         # Cari operator greeting sebelum leave message
         operator_greetings = self._find_operator_greetings_before_time(ticket_df, leave_time)
@@ -1730,7 +1732,12 @@ class ReplyAnalyzer:
         
         print(f"   💬 Customer interactions after greeting: {len(customer_interactions)}")
         print(f"   👨‍💼 Operator interactions after greeting: {len(operator_interactions)}")
-        print(f"   ✅ Final reply found: {final_reply_found}")
+        
+        # DEBUG: Tampilkan isi operator interactions
+        if len(operator_interactions) > 0:
+            print(f"   🔍 Operator interactions content:")
+            for idx, interaction in operator_interactions.iterrows():
+                print(f"      - {interaction['parsed_timestamp']}: {interaction['Message'][:100]}...")
         
         # 🎯 LOGIKA UTAMA YANG DIPERBAIKI:
         # Untuk customer leave, yang penting adalah:
@@ -1744,19 +1751,18 @@ class ReplyAnalyzer:
         
         if has_reopened:
             print("   🔄 Ticket has reopened pattern - using relaxed customer leave detection")
-            # Untuk reopened tickets, fokus pada apakah customer merespons setelah greeting terakhir
-            # TETAPI tetap perhatikan jika operator sudah memberikan final reply
+            # Untuk reopened tickets
             is_true_leave = (
                 len(customer_interactions) == 0 and 
                 len(operator_interactions) == 0 and
-                not final_reply_found  # ← TAMBAHKAN INI
+                not final_reply_found  # ← JIKA ADA FINAL REPLY, BUKAN CUSTOMER LEAVE
             )
         else:
             # Untuk normal tickets
             is_true_leave = (
                 len(customer_interactions) == 0 and 
                 len(operator_interactions) == 0 and
-                not final_reply_found  # ← INI SUDAH ADA, tetap pertahankan
+                not final_reply_found  # ← JIKA ADA FINAL REPLY, BUKAN CUSTOMER LEAVE
             )
         
         if is_true_leave:
@@ -1769,8 +1775,8 @@ class ReplyAnalyzer:
                 print("   ✅ NOT customer leave: Customer responded after greeting")
             elif len(operator_interactions) > 0:
                 print("   ✅ NOT customer leave: Operator continued conversation")
-            elif final_reply_found:  # ← PERBAIKI PENJELASAN DI SINI
-                print("   ✅ NOT customer leave: Final reply was provided by operator")
+            elif final_reply_found:  # ← INI SEHARUSNYA MENCEGAH CUSTOMER LEAVE
+                print("   ✅ NOT customer leave: Final reply was provided by operator (customer mungkin puas dengan jawaban)")
             else:
                 print("   ❓ Borderline case - reviewing...")
                 
@@ -2891,6 +2897,7 @@ print("   ✓ New issue type detection logic")
 print("   ✓ Complaint ticket matching")
 print("   ✓ Ticket reopened detection")
 print("=" * 60)
+
 
 
 
