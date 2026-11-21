@@ -178,11 +178,21 @@ def main_interface():
             key="complaint_uploader"
         )
         
+        # Demo: pakai file contoh (data sintetis) kalau user tidak punya file
+        if st.checkbox("🧪 Pakai data contoh (demo)", key="use_sample",
+                       help="Data sintetis 40 tiket, bukan data pelanggan asli"):
+            uploaded_raw_file = "sample_data/raw_conversation_sample.xlsx"
+            uploaded_complaint_file = "sample_data/complaint_sample.xlsx"
+            st.caption("Download contoh format:")
+            for _p in (uploaded_raw_file, uploaded_complaint_file):
+                with open(_p, "rb") as _f:
+                    st.download_button(os.path.basename(_p), _f.read(), file_name=os.path.basename(_p), key=f"dl_{_p}")
+
         if uploaded_raw_file is not None:
-            st.success(f"✅ Raw file: {uploaded_raw_file.name}")
+            st.success(f"✅ Raw file: {getattr(uploaded_raw_file, 'name', uploaded_raw_file)}")
             
         if uploaded_complaint_file is not None:
-            st.success(f"✅ Complaint file: {uploaded_complaint_file.name}")
+            st.success(f"✅ Complaint file: {getattr(uploaded_complaint_file, 'name', uploaded_complaint_file)}")
         
         # Preview data
         if st.checkbox("Preview uploaded data"):
