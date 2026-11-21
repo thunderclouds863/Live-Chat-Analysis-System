@@ -295,6 +295,8 @@ def main_interface():
     else:
         # Show upload reminder
         st.markdown("---")
+        st.success("🧪 **Mau langsung coba?** Centang **\"Pakai data contoh (demo)\"** di sidebar kiri, "
+                   "lalu klik **START ANALYSIS**. Data contoh berisi 40 tiket sintetis.")
         st.markdown("## 📤 Upload Required Files")
         
         col1, col2 = st.columns(2)
