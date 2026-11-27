@@ -4,5 +4,3 @@ models/
 __pycache__/
 *.pyc
 ~$*
-.streamlit/secrets.toml
-*.db

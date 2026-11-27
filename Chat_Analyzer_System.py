@@ -205,8 +205,7 @@ class DataPreprocessor:
                 return None
             
             # Standardize roles
-            # Role kosong (NaN) dipetakan ke 'Blank' lewat key '' di role_mapping
-            df_clean['Role'] = df_clean['Role'].fillna('').astype(str).str.strip().str.lower().map(
+            df_clean['Role'] = df_clean['Role'].str.lower().map(
                 lambda x: self.role_mapping.get(x, x.title())
             )
             
@@ -2558,11 +2557,8 @@ class CompleteAnalysisPipeline:
         result.update(extra_data)
         return result
     
-    def analyze_all_tickets(self, df, max_tickets=None, progress_callback=None):
-        """Analisis semua tickets dengan complaint matching yang benar
-
-        progress_callback(done, total) dipanggil setelah setiap tiket (opsional).
-        """
+    def analyze_all_tickets(self, df, max_tickets=None):
+        """Analisis semua tickets dengan complaint matching yang benar"""
         print("🚀 STARTING COMPLETE ANALYSIS PIPELINE")
         
         # Load complaint data setelah punya raw_df
@@ -2592,9 +2588,6 @@ class CompleteAnalysisPipeline:
             
             if result['status'] == 'success':
                 successful_analyses += 1
-            
-            if progress_callback:
-                progress_callback(i + 1, len(ticket_ids))
             
             # Progress reporting
             if (i + 1) % 10 == 0 or (i + 1) == len(ticket_ids):
@@ -2628,13 +2621,6 @@ class CompleteAnalysisPipeline:
         """Hitung statistics dari results - FIXED VERSION dengan semua key yang diperlukan"""
         successful = [r for r in self.results if r['status'] == 'success']
         failed = [r for r in self.results if r['status'] == 'failed']
-        
-        # Kumpulkan alasan gagal dari hasil (analyze_single_ticket tidak mengisi self.failure_reasons)
-        for r in failed:
-            reason = r.get('failure_reason') or 'Unknown'
-            tickets = self.failure_reasons.setdefault(reason, [])
-            if r['ticket_id'] not in tickets:
-                tickets.append(r['ticket_id'])
         
         # INITIALIZE SEMUA KEY YANG DIPERLUKAN
         stats = {
