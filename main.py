@@ -16,7 +16,7 @@ def main():
     try:
         # Step 1: Load data
         print("📁 Step 1: Loading data...")
-        from Chat_Analyzer_System import DataPreprocessor, Config
+        from Chat_Analyzer_System import DataPreprocessor, config as Config
         
         preprocessor = DataPreprocessor()
         df = preprocessor.load_raw_data(Config.RAW_DATA_PATH)
@@ -43,22 +43,27 @@ def main():
         
         # Step 4: Create visualizations
         print("📊 Step 4: Creating visualizations...")
-        exporter.create_comprehensive_visualizations(results, stats)
+        if hasattr(exporter, 'create_comprehensive_visualizations'):
+            exporter.create_comprehensive_visualizations(results, stats)
+        else:
+            print("   (skipped: not available in this version)")
         
         # Step 5: Generate model evaluation report
         print("🤖 Step 5: Generating model evaluation...")
-        from Chat_Analyzer_System import ModelTrainer
-        
-        model_trainer = ModelTrainer(pipeline)
-        training_data = model_trainer.collect_training_data_from_analysis(results)
-        model_trainer.enhance_training_data()
-        accuracy = model_trainer.train_and_evaluate_model(test_size=0.2)
-        model_trainer.save_model_report()
+        import Chat_Analyzer_System as _cas
+        if hasattr(_cas, 'ModelTrainer'):
+            model_trainer = _cas.ModelTrainer(pipeline)
+            training_data = model_trainer.collect_training_data_from_analysis(results)
+            model_trainer.enhance_training_data()
+            accuracy = model_trainer.train_and_evaluate_model(test_size=0.2)
+            model_trainer.save_model_report()
+        else:
+            print("   (skipped: not available in this version)")
         
         # Step 6: Generate PDF Summary Report
         print("📄 Step 6: Generating PDF summary...")
         try:
-            from Chat_Analyzer_System import PDFReportGenerator
+            from pdf_report_generator import PDFReportGenerator
             pdf_generator = PDFReportGenerator()
             pdf_path = pdf_generator.generate_management_summary(results, stats)
             print(f"✅ PDF report generated: {pdf_path}")
@@ -1376,11 +1381,8 @@ class PDFReportGenerator:
     print("💡 Install dependencies: pip install -r requirements.txt")
 
 if __name__ == "__main__":
-    # Run main analysis
-    results, stats = main()
-    
-    # Deploy dashboard
-    deploy_streamlit()
-    
-    # Create deployment package
-    create_deployment_package()
+    # Run main analysis (batch mode, reads config.RAW_DATA_PATH).
+    # deploy_streamlit() and create_deployment_package() are intentionally NOT called:
+    # they overwrite app.py, requirements.txt and pdf_report_generator.py with an
+    # outdated embedded copy. The Streamlit app is app.py: `streamlit run app.py`.
+    results, stats = main()
