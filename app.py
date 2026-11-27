@@ -36,8 +36,9 @@ st.set_page_config(
 APP_NAME = "Live Chat Analysis"
 RAW_REQUIRED_COLUMNS = ['Ticket Number', 'Role', 'Sender', 'Message Date', 'Message']
 COMPLAINT_REQUIRED_COLUMNS = ['No.Handphone', 'Lead Time (Solved)']
-SAMPLE_RAW = "sample_data/raw_conversation_sample.xlsx"
-SAMPLE_COMPLAINT = "sample_data/complaint_sample.xlsx"
+SAMPLE_RAW = os.path.join(auth.APP_DIR, "sample_data", "raw_conversation_sample.xlsx")
+SAMPLE_COMPLAINT = os.path.join(auth.APP_DIR, "sample_data", "complaint_sample.xlsx")
+SAMPLES_AVAILABLE = os.path.exists(SAMPLE_RAW) and os.path.exists(SAMPLE_COMPLAINT)
 
 # One semantic palette used by every chart and badge.
 ISSUE_ORDER = ['NORMAL', 'SERIOUS', 'COMPLAINT']
@@ -73,14 +74,34 @@ st.markdown("""
   .lca-brand { display: block; line-height: 24px; font-weight: 650; font-size: 1.05rem; color: #18212F; white-space: nowrap; }
   .lca-user { line-height: 24px; color: #5B6573; font-size: 0.85rem; text-align: right; overflow: hidden;
               text-overflow: ellipsis; white-space: nowrap; }
-  @media (max-width: 640px) { .lca-user { display: none; } }
-  /* sign-in and recovery screens */
-  .st-key-auth_card { max-width: 380px; margin: 9vh auto 0 auto; }
-  .lca-auth-title { font-size: 1.35rem; font-weight: 650; margin: 0 0 0.25rem 0; color: #18212F; }
-  .lca-auth-sub { color: #5B6573; font-size: 0.92rem; margin-bottom: 1rem; }
-  .lca-mark { width: 36px; height: 36px; border-radius: 8px; background: #1F5FAD; color: #fff;
-              display: flex; align-items: center; justify-content: center; font-weight: 700;
-              font-size: 0.95rem; margin-bottom: 1rem; letter-spacing: 0.02em; }
+  @media (max-width: 640px) {
+    .lca-user { display: none; }
+    /* admins: section switcher moves to its own full-width row under the brand */
+    .st-key-topbar [data-testid="stHorizontalBlock"] { flex-wrap: wrap; row-gap: 0.5rem; }
+    .st-key-topbar [data-testid="stColumn"]:has(.st-key-topnav) { order: 3; flex: 1 1 100%; }
+    .st-key-topnav [data-testid="stElementContainer"], .st-key-topnav .stButtonGroup,
+    .st-key-topnav .stButtonGroup div:has(> button) { width: 100% !important; display: flex; flex: 1 1 auto; }
+    .st-key-topnav .stButtonGroup * { max-width: none; }
+    .st-key-topnav button { flex: 1 1 0; min-height: 40px; }
+  }
+  /* sign-in, recovery and status screens: brand line top-left, one narrow column, no card */
+  .lca-auth-brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 1rem;
+                    color: #18212F; }
+  [class*="st-key-auth_card"] { max-width: 360px; margin: 14vh auto 0 auto; }
+  @media (max-width: 640px) { [class*="st-key-auth_card"] { margin-top: 2.5rem; max-width: none; } }
+  h1.lca-auth-title { font-size: 1.5rem; font-weight: 650; margin: 0 0 0.35rem 0; padding: 0; color: #18212F;
+                      line-height: 1.25; }
+  .lca-auth-sub { color: #5B6573; font-size: 0.92rem; margin: 0 0 0.75rem 0; line-height: 1.5; }
+  [class*="st-key-auth_card"] [data-testid="stTextInputRootElement"] { min-height: 44px; }
+  [class*="st-key-auth_card"] [data-testid="stFormSubmitButton"] button { min-height: 44px; font-weight: 600; }
+  .lca-notice { border-left: 3px solid #1F5FAD; background: #F3F5F8; padding: 12px 14px; border-radius: 4px;
+                color: #18212F; font-size: 0.92rem; line-height: 1.5; margin-top: 0.5rem; }
+  .lca-auth-foot { color: #5B6573; font-size: 0.85rem; border-top: 1px solid #DCE1E8; padding-top: 0.9rem;
+                   margin-top: 0.5rem; }
+  .lca-mark { flex: 0 0 auto; display: block; }
+  .lca-brand { display: flex !important; align-items: center; gap: 8px; }
+  .lca-brand .lca-mark { width: 24px; height: 24px; }
+  :focus-visible { outline: 2px solid #1F5FAD !important; outline-offset: 2px; }
   .lca-quote { border-left: 3px solid #4C78A8; background: #F3F5F8; padding: 10px 12px;
                border-radius: 4px; margin: 0.25rem 0 0.75rem 0; white-space: pre-wrap; }
   .lca-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.78rem;
@@ -153,32 +174,75 @@ def show_chart(fig, height=320):
 
 
 # ============================================================ authentication
+BRAND_MARK = (
+    '<svg class="lca-mark" viewBox="0 0 32 32" width="28" height="28" aria-hidden="true" focusable="false">'
+    '<rect width="32" height="32" rx="7" fill="#1F5FAD"/>'
+    '<path d="M8 9.5h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-9l-5 4v-4H8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z" fill="#fff"/>'
+    '<rect x="10" y="15" width="2.4" height="4" rx="0.6" fill="#1F5FAD"/>'
+    '<rect x="14.8" y="12.5" width="2.4" height="6.5" rx="0.6" fill="#1F5FAD"/>'
+    '<rect x="19.6" y="14" width="2.4" height="5" rx="0.6" fill="#1F5FAD"/></svg>'
+)
+
+
+@st.cache_resource(show_spinner=False)
+def _init_auth_store():
+    """Create/migrate the account tables once per server process."""
+    auth.init_db()
+    info = auth.storage_description()
+    if not info["persistent"]:
+        log.warning("Accounts are stored in SQLite on a disk that is reset on restart (%s). "
+                    "Set LCA_DATABASE_URL to a PostgreSQL database to keep accounts.", info["location"])
+    return True
+
+
 def _current_user():
     user = st.session_state.get("user")
-    if user and not auth.session_still_valid(user):
-        st.session_state.pop("user", None)
-        st.session_state["auth_notice"] = "Your session ended because the account changed. Please sign in again."
+    if not user:
         return None
-    return user
+    fresh = auth.refresh_session(user)
+    if fresh is None:
+        st.session_state.pop("user", None)
+        st.session_state["auth_notice"] = "Your session ended because your account changed. Sign in again."
+        return None
+    st.session_state["user"] = fresh  # role changes apply on the next interaction
+    return fresh
 
 
-def _auth_header(title, subtitle):
-    st.markdown(f'<div class="lca-mark" aria-hidden="true">LC</div>'
-                f'<p class="lca-auth-title">{esc(title)}</p>'
-                f'<p class="lca-auth-sub">{esc(subtitle)}</p>', unsafe_allow_html=True)
+def _auth_shell(key="auth_card"):
+    """Brand line shared by the sign-in, recovery and status screens."""
+    st.markdown(f'<div class="lca-auth-brand">{BRAND_MARK}<span>{APP_NAME}</span></div>', unsafe_allow_html=True)
+    return st.container(key=key)
+
+
+def _auth_heading(title, subtitle=None):
+    st.markdown(f'<h1 class="lca-auth-title">{esc(title)}</h1>'
+                + (f'<p class="lca-auth-sub">{esc(subtitle)}</p>' if subtitle else ''), unsafe_allow_html=True)
+
+
+def render_unavailable():
+    with _auth_shell("auth_card_unavailable"):
+        _auth_heading("Sign-in is unavailable",
+                      "The service can't be reached right now. Try again in a few minutes. "
+                      "If it keeps happening, contact your system administrator.")
+        if st.button("Try again", type="primary", use_container_width=True):
+            st.rerun()
 
 
 def render_login():
-    with st.container(key="auth_card"):
-        _auth_header(APP_NAME, "Sign in to continue")
+    with _auth_shell():
+        _auth_heading("Sign in")
         notice = st.session_state.pop("auth_notice", None)
         if notice:
             st.info(notice)
         if auth.count_users() == 0:
-            st.warning("No accounts exist yet. Create one on the server with "
-                       "`python manage_users.py create --email you@company.com`.")
+            # Expected only before the first administrator is provisioned; details go to the server log.
+            log.warning("Sign-in page shown with no accounts. Provision the first administrator "
+                        "(see README, 'First administrator').")
+            st.markdown('<div class="lca-notice" role="status"><strong>Access hasn\'t been set up yet.</strong><br>'
+                        'Contact your system administrator for an account.</div>', unsafe_allow_html=True)
+            return
         with st.form("login_form", border=False):
-            email = st.text_input("Email", autocomplete="email", key="login_email")
+            email = st.text_input("Email", autocomplete="email", key="login_email", placeholder="name@company.com")
             password = st.text_input("Password", type="password", autocomplete="current-password")
             submitted = st.form_submit_button("Sign in", type="primary", use_container_width=True)
         if submitted:
@@ -194,24 +258,28 @@ def render_login():
                     st.error("Too many failed attempts. Wait 15 minutes or reset your password.")
                 else:
                     st.error("The email or password is incorrect.")
-        if st.button("Forgot password?", type="tertiary"):
+        if st.button("Forgot password?", type="tertiary", key="to_forgot"):
             st.session_state["auth_view"] = "forgot"
             st.rerun()
+        st.markdown('<p class="lca-auth-foot">Need an account? Ask your system administrator.</p>',
+                    unsafe_allow_html=True)
 
 
 def render_forgot():
-    with st.container(key="auth_card"):
-        _auth_header("Reset your password",
-                     "Enter the email you sign in with. We'll send a link to choose a new password.")
-        if st.session_state.get("reset_requested_for"):
+    with _auth_shell():
+        _auth_heading("Reset your password",
+                      "Enter the email you sign in with and we'll send you a link to choose a new password.")
+        if not auth.smtp_configured():
+            st.markdown('<div class="lca-notice" role="status">Password reset by email isn\'t available here. '
+                        'Ask your system administrator to send you a reset link.</div>', unsafe_allow_html=True)
+        elif st.session_state.get("reset_requested_for"):
             st.success(f"If an account exists for {md_escape(st.session_state['reset_requested_for'])}, "
-                       f"a reset link is on its way. The link works once and expires in "
-                       f"{auth.reset_ttl_minutes()} minutes.")
+                       f"a reset link is on its way. It works once and expires in {auth.reset_ttl_minutes()} minutes.")
             st.caption("Didn't get it? Check your spam folder, or ask your administrator to confirm "
                        "the address on your account.")
         else:
             with st.form("forgot_form", border=False):
-                email = st.text_input("Email", autocomplete="email")
+                email = st.text_input("Email", autocomplete="email", placeholder="name@company.com")
                 submitted = st.form_submit_button("Send reset link", type="primary", use_container_width=True)
             if submitted:
                 if not auth.is_valid_email(email):
@@ -228,9 +296,9 @@ def render_forgot():
 
 
 def render_reset(token):
-    with st.container(key="auth_card"):
+    with _auth_shell():
         if st.session_state.get("reset_done"):
-            _auth_header("Password updated", "You can now sign in with your new password.")
+            _auth_heading("Password saved", "You can now sign in with your new password.")
             if st.button("Go to sign in", type="primary", use_container_width=True):
                 st.session_state.pop("reset_done", None)
                 st.session_state["auth_view"] = "login"
@@ -238,32 +306,36 @@ def render_reset(token):
                 st.rerun()
             return
 
-        status = auth.check_reset_token(token)
+        status, purpose = auth.token_info(token)
+        invite = purpose == auth.PURPOSE_INVITE
         if status != auth.TokenStatus.VALID:
             messages = {
-                auth.TokenStatus.EXPIRED: ("This link has expired", "Reset links are valid for a limited time. Request a new one."),
-                auth.TokenStatus.USED: ("This link was already used", "Each reset link works once. Request a new one if you still need it."),
+                auth.TokenStatus.EXPIRED: ("This link has expired",
+                                           "Links are valid for a limited time. "
+                                           + ("Ask your administrator for a new one." if invite else "Request a new one.")),
+                auth.TokenStatus.USED: ("This link was already used",
+                                        "Each link works once. Sign in, or request a new link if you still need one."),
             }
             title, sub = messages.get(status, ("This link is not valid",
                                                "Check that you opened the full link from the email, or request a new one."))
-            _auth_header(title, sub)
-            if st.button("Request a new link", type="primary", use_container_width=True):
+            _auth_heading(title, sub)
+            if st.button("Go to sign in", type="primary", use_container_width=True):
                 st.query_params.clear()
-                st.session_state["auth_view"] = "forgot"
+                st.session_state["auth_view"] = "login"
                 st.rerun()
             return
 
-        _auth_header("Choose a new password",
-                     f"Use at least {auth.PASSWORD_MIN_LENGTH} characters. A short phrase is easier to remember.")
+        _auth_heading("Set your password" if invite else "Choose a new password",
+                      f"Use at least {auth.PASSWORD_MIN_LENGTH} characters. A short phrase is easier to remember.")
         with st.form("reset_form", border=False):
             new_pw = st.text_input("New password", type="password", autocomplete="new-password")
             confirm = st.text_input("Confirm new password", type="password", autocomplete="new-password")
-            submitted = st.form_submit_button("Update password", type="primary", use_container_width=True)
+            submitted = st.form_submit_button("Save password", type="primary", use_container_width=True)
         if submitted:
             if new_pw != confirm:
                 st.error("The passwords don't match.")
                 return
-            with st.spinner("Updating…"):
+            with st.spinner("Saving…"):
                 status, problems = auth.reset_password(token, new_pw)
             if problems:
                 st.error(" ".join(problems))
@@ -275,18 +347,124 @@ def render_reset(token):
                 st.error("This link can no longer be used. Request a new one.")
 
 
+def _sign_out():
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    st.session_state["auth_notice"] = "You have signed out."
+
+
 def render_topbar(user):
+    is_admin = bool(user.get("is_admin"))
+    page = st.session_state.get("page", "analysis") if is_admin else "analysis"
     with st.container(key="topbar"):
-        c1, c2, c3 = st.columns([3, 3, 1], vertical_alignment="center")
-        c1.markdown(f'<span class="lca-brand">{APP_NAME}</span>', unsafe_allow_html=True)
-        c2.markdown(f'<div class="lca-user">{esc(user.get("name") or user["email"])}'
-                    f'{" · " + esc(user["email"]) if user.get("name") else ""}</div>',
-                    unsafe_allow_html=True)
-        if c3.button("Sign out", type="tertiary", key="sign_out"):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.session_state["auth_notice"] = "You have signed out."
+        cols = st.columns([2.2, 2.6, 2.2, 0.9] if is_admin else [2.2, 4.8, 0.9], vertical_alignment="center")
+        cols[0].markdown(f'<span class="lca-brand">{BRAND_MARK}<span>{APP_NAME}</span></span>', unsafe_allow_html=True)
+        if is_admin:
+            with cols[1].container(key="topnav"):
+                choice = st.segmented_control("Section", ["Analysis", "Team"], default=page.title(),
+                                              key="nav", label_visibility="collapsed")
+                if choice and choice.lower() != page:
+                    st.session_state["page"] = choice.lower()
+                    st.rerun()
+        cols[-2].markdown(f'<div class="lca-user" title="{esc(user["email"])}">{esc(user.get("name") or user["email"])}'
+                          f'{" · admin" if is_admin else ""}</div>', unsafe_allow_html=True)
+        if cols[-1].button("Sign out", type="tertiary", key="sign_out"):
+            _sign_out()
             st.rerun()
+    return page
+
+
+# ============================================================ team (admins)
+def render_team(user):
+    # Authorization is checked here on the server, not only by hiding the navigation.
+    if not user.get("is_admin"):
+        st.error("Only administrators can manage accounts.")
+        return
+    st.markdown("## Team")
+    st.markdown('<p class="lca-muted">People who can sign in. New people get a link to set their own password.</p>',
+                unsafe_allow_html=True)
+
+    storage = auth.storage_description()
+    if not storage["persistent"]:
+        st.warning("Accounts are stored on this server's temporary disk and will be lost when the app restarts "
+                   "or is redeployed. Connect a PostgreSQL database (LCA_DATABASE_URL) to keep them. "
+                   "See the README.", icon=":material/warning:")
+    emailing = auth.smtp_configured()
+    if not emailing:
+        st.info("Email isn't configured, so links are shown here for you to share with the person directly. "
+                "Share them privately: anyone with the link can set the password.", icon=":material/info:")
+
+    issued = st.session_state.pop("issued_link", None)
+    if issued:
+        st.success(issued["message"], icon=":material/check_circle:")
+        if issued.get("link"):
+            st.code(issued["link"], language=None, wrap_lines=True)
+
+    st.subheader("Add a person", anchor=False)
+    with st.form("invite_form", border=False, clear_on_submit=True):
+        c1, c2, c3 = st.columns([2, 2, 1.2])
+        email = c1.text_input("Email", placeholder="name@company.com")
+        name = c2.text_input("Name")
+        role = c3.selectbox("Role", ["Analyst", "Administrator"],
+                            help="Administrators can add people and manage access.")
+        submitted = st.form_submit_button("Create account", type="primary")
+    if submitted:
+        if not auth.is_valid_email(email):
+            st.error("Enter a valid email address.")
+        else:
+            try:
+                link, emailed = auth.invite_user(email, name, is_admin=(role == "Administrator"))
+                who = md_escape(auth.normalise_email(email))
+                st.session_state["issued_link"] = {
+                    "message": (f"Account created. {who} has been emailed a link to set a password." if emailed
+                                else f"Account created for {who}. Send them this link to set a password "
+                                     f"(valid {auth.invite_ttl_hours()} hours, one use):"),
+                    "link": None if emailed else link}
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
+
+    users = auth.list_users()
+    table = pd.DataFrame([{
+        "Name": u["name"] or "-",
+        "Email": u["email"],
+        "Role": "Administrator" if u["is_admin"] else "Analyst",
+        "Status": "Disabled" if not u["is_active"] else ("Invited" if u["pending"] else "Active"),
+        "Added": datetime.fromtimestamp(u["created_at"]).strftime("%d %b %Y"),
+    } for u in users])
+    st.dataframe(table, use_container_width=True, hide_index=True)
+
+    st.subheader("Manage a person", anchor=False)
+    by_email = {u["email"]: u for u in users}
+    target_email = st.selectbox("Person", list(by_email.keys()), key="team_target",
+                                format_func=lambda e: f"{by_email[e]['name'] or e} · {e}" if by_email[e]['name'] else e)
+    target = by_email.get(target_email)
+    if not target:
+        return
+    is_self = target["id"] == user["id"]
+    c1, c2, c3 = st.columns(3)
+    try:
+        if c1.button("New password link", use_container_width=True, disabled=not target["is_active"],
+                     help="Sends (or shows) a one-time link to set a new password"):
+            link, emailed = auth.issue_password_link(target["id"],
+                                                     auth.PURPOSE_INVITE if target["pending"] else auth.PURPOSE_RESET)
+            who = md_escape(target["email"])
+            st.session_state["issued_link"] = {
+                "message": f"A password link was emailed to {who}." if emailed
+                else f"Password link for {who}. Share it privately:",
+                "link": None if emailed else link}
+            st.rerun()
+        if c2.button("Remove admin" if target["is_admin"] else "Make admin", use_container_width=True,
+                     disabled=is_self and bool(target["is_admin"]),
+                     help="You can't remove your own administrator role" if is_self else None):
+            auth.set_admin(target["email"], not target["is_admin"])
+            st.rerun()
+        if c3.button("Enable" if not target["is_active"] else "Disable", use_container_width=True,
+                     disabled=is_self, help="You can't disable your own account" if is_self else None):
+            auth.set_active(target["email"], not target["is_active"])
+            st.rerun()
+    except ValueError as exc:
+        st.error(str(exc))
 
 
 # ============================================================ data loading
@@ -337,7 +515,8 @@ def main_interface():
                 'period. Files are used only for this session and are not kept on the server.</p>',
                 unsafe_allow_html=True)
 
-    use_sample = st.toggle("Use sample data (40 synthetic tickets, no real customers)", key="use_sample")
+    use_sample = SAMPLES_AVAILABLE and st.toggle("Use sample data (40 synthetic tickets, no real customers)",
+                                                 key="use_sample")
 
     raw_df = complaint_df = None
     total_tickets = 0
@@ -398,7 +577,7 @@ def main_interface():
 
     clicked = st.button("Run analysis", type="primary", disabled=not ready,
                         help=None if ready else "Upload both files first")
-    if not ready and not use_sample:
+    if not ready and not use_sample and SAMPLES_AVAILABLE:
         st.caption("No files at hand? Turn on **Use sample data** above, or download the sample files to see the expected format.")
         c1, c2, _ = st.columns([1, 1, 2])
         for col, path in ((c1, SAMPLE_RAW), (c2, SAMPLE_COMPLAINT)):
@@ -958,25 +1137,39 @@ def display_data_quality_tab(results, stats):
 
 # ============================================================ entry point
 def main():
-    auth.init_db()
-    token = st.query_params.get("reset_token")
-    if token:
-        render_reset(token)
+    # Auth screens draw into a placeholder so a database failure part-way through
+    # can replace them with the "unavailable" screen instead of a traceback.
+    screen = st.empty()
+    try:
+        with screen.container():
+            _init_auth_store()
+            token = st.query_params.get("reset_token")
+            if token:
+                render_reset(token)
+                return
+            user = _current_user()
+            if not user:
+                if st.session_state.get("auth_view") == "forgot":
+                    render_forgot()
+                else:
+                    render_login()
+                return
+    except auth.AuthUnavailable:
+        screen.empty()
+        render_unavailable()
         return
 
-    user = _current_user()
-    if not user:
-        if st.session_state.get("auth_view") == "forgot":
-            render_forgot()
-        else:
-            render_login()
+    page = render_topbar(user)
+    if page == "team":
+        try:
+            render_team(user)
+        except auth.AuthUnavailable:
+            st.error("Accounts can't be loaded right now. Try again in a few minutes.")
         return
-
-    render_topbar(user)
     if not ANALYSIS_AVAILABLE:
-        st.error(f"The analysis module could not be loaded: {ANALYSIS_IMPORT_ERROR}. "
-                 "Check that Chat_Analyzer_System.py is present and dependencies are installed.")
-        st.stop()
+        log.error("Analysis module could not be loaded: %s", ANALYSIS_IMPORT_ERROR)
+        st.error("The analysis engine isn't available right now. Contact your system administrator.")
+        return
     if st.session_state.get('analysis_complete', False):
         display_enhanced_results()
     else:
