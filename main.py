@@ -1385,4 +1385,4 @@ if __name__ == "__main__":
     # deploy_streamlit() and create_deployment_package() are intentionally NOT called:
     # they overwrite app.py, requirements.txt and pdf_report_generator.py with an
     # outdated embedded copy. The Streamlit app is app.py: `streamlit run app.py`.
-    results, stats = main()
+    results, stats = main()
