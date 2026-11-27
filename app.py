@@ -1,1626 +1,987 @@
-# app.py - Streamlit Dashboard dengan Logic Baru
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime
+# app.py - Streamlit app for Live Chat Analysis
+import html
+import logging
 import os
 import sys
 import tempfile
 import traceback
+from datetime import datetime
 
-# Import analysis modules
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+import auth
+
 sys.path.append('.')
 try:
-    from Chat_Analyzer_System import (
-        DataPreprocessor, CompleteAnalysisPipeline, 
-        ResultsExporter, config
-    )
+    from Chat_Analyzer_System import DataPreprocessor, CompleteAnalysisPipeline, ResultsExporter
     ANALYSIS_AVAILABLE = True
-except ImportError as e:
-    st.warning(f"Analysis modules not available: {e}")
+    ANALYSIS_IMPORT_ERROR = None
+except ImportError as e:  # pragma: no cover - shown in the UI
     ANALYSIS_AVAILABLE = False
+    ANALYSIS_IMPORT_ERROR = str(e)
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("lca.app")
 
 st.set_page_config(
-    page_title="Live Chat Analysis Dashboard - Enhanced",
-    page_icon="🤖", 
+    page_title="Live Chat Analysis",
+    page_icon=":material/forum:",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed",
 )
 
-# Custom CSS
+APP_NAME = "Live Chat Analysis"
+RAW_REQUIRED_COLUMNS = ['Ticket Number', 'Role', 'Sender', 'Message Date', 'Message']
+COMPLAINT_REQUIRED_COLUMNS = ['No.Handphone', 'Lead Time (Solved)']
+SAMPLE_RAW = "sample_data/raw_conversation_sample.xlsx"
+SAMPLE_COMPLAINT = "sample_data/complaint_sample.xlsx"
+
+# One semantic palette used by every chart and badge.
+ISSUE_ORDER = ['NORMAL', 'SERIOUS', 'COMPLAINT']
+ISSUE_COLORS = {'NORMAL': '#4C78A8', 'SERIOUS': '#D98A1F', 'COMPLAINT': '#C0392B'}
+PERF_ORDER = ['EXCELLENT', 'GOOD', 'FAIR', 'POOR']
+PERF_COLORS = {'EXCELLENT': '#2E7D4F', 'GOOD': '#7FB069', 'FAIR': '#D98A1F', 'POOR': '#C0392B'}
+REPLY_COLORS = {'First Reply': '#4C78A8', 'Final Reply': '#18212F'}
+
 st.markdown("""
 <style>
-    .main-header {
-        font-size: 2.5rem;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #2f0757 100%);
-        border-radius: 12px;
-        padding: 25px 15px;
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-        margin: 8px;
-        text-align: center;
-        border: none;
-        color: white;
-        position: relative;
-        overflow: hidden;
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
-    }
-    .metric-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
-    }
-    .metric-card h3 {
-        font-size: 0.85rem;
-        color: rgba(255, 255, 255, 0.9);
-        margin: 0 0 12px 0;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-    .metric-card h1 {
-        font-size: 2.2rem;
-        color: white;
-        margin: 0;
-        font-weight: 700;
-        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    }
-    .success-box {
-        background-color: #d4edda;
-        border: 1px solid #c3e6cb;
-        border-radius: 5px;
-        padding: 15px;
-        margin: 10px 0;
-    }
-    .warning-box {
-        background-color: #fff3cd;
-        border: 1px solid #ffeaa7;
-        border-radius: 5px;
-        padding: 15px;
-        margin: 10px 0;
-    }
-    .message-box {
-        background-color: #f8f9fa;
-        border-left: 4px solid #007bff;
-        padding: 10px;
-        margin: 10px 0;
-        border-radius: 4px;
-    }
-    .special-case {
-        background-color: #e7f3ff;
-        border-left: 4px solid #007bff;
-        padding: 10px;
-        margin: 5px 0;
-        border-radius: 4px;
-    }
-    .complaint-case {
-        background-color: #fff3cd;
-        border-left: 4px solid #ffc107;
-        padding: 10px;
-        margin: 5px 0;
-        border-radius: 4px;
-    }
+  .block-container { max-width: 1240px; padding-top: 2.25rem; padding-bottom: 3rem; }
+  @media (max-width: 640px) {
+    .block-container { padding-left: 1rem; padding-right: 1rem; padding-top: 1.25rem; }
+  }
+  [data-testid="stMetric"] {
+    border: 1px solid #DCE1E8; border-radius: 8px; padding: 12px 14px; background: #FFFFFF;
+  }
+  [data-testid="stMetricLabel"] p { color: #5B6573; font-size: 0.82rem; }
+  /* top bar: keep brand and account on one row on phones */
+  .st-key-topbar [data-testid="stHorizontalBlock"] { flex-wrap: nowrap; align-items: center; gap: 0.5rem; }
+  .st-key-topbar [data-testid="stColumn"] { min-width: 0; width: auto; flex: 1 1 auto; }
+  .st-key-topbar [data-testid="stColumn"]:last-child { flex: 0 0 auto; }
+  .st-key-topbar { border-bottom: 1px solid #DCE1E8; padding-bottom: 0.6rem; margin-bottom: 0.5rem; }
+  .st-key-topbar [data-testid="stMarkdownContainer"], .st-key-topbar [data-testid="stMarkdownContainer"] p { margin: 0 !important; }
+  .st-key-topbar [data-testid="stElementContainer"] { margin-bottom: 0; }
+  .st-key-sign_out button { min-height: 0; padding-top: 0; padding-bottom: 0; }
+  /* KPI rows: two per row on phones instead of one tall stack */
+  @media (max-width: 640px) {
+    [class*="st-key-kpis"] [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: 0.5rem; }
+    [class*="st-key-kpis"] [data-testid="stColumn"] { flex: 1 1 calc(50% - 0.5rem); min-width: calc(50% - 0.5rem); }
+    [data-testid="stMetric"] { padding: 10px 12px; }
+  }
+  .lca-brand { display: block; line-height: 24px; font-weight: 650; font-size: 1.05rem; color: #18212F; white-space: nowrap; }
+  .lca-user { line-height: 24px; color: #5B6573; font-size: 0.85rem; text-align: right; overflow: hidden;
+              text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 640px) { .lca-user { display: none; } }
+  /* sign-in and recovery screens */
+  .st-key-auth_card { max-width: 380px; margin: 9vh auto 0 auto; }
+  .lca-auth-title { font-size: 1.35rem; font-weight: 650; margin: 0 0 0.25rem 0; color: #18212F; }
+  .lca-auth-sub { color: #5B6573; font-size: 0.92rem; margin-bottom: 1rem; }
+  .lca-mark { width: 36px; height: 36px; border-radius: 8px; background: #1F5FAD; color: #fff;
+              display: flex; align-items: center; justify-content: center; font-weight: 700;
+              font-size: 0.95rem; margin-bottom: 1rem; letter-spacing: 0.02em; }
+  .lca-quote { border-left: 3px solid #4C78A8; background: #F3F5F8; padding: 10px 12px;
+               border-radius: 4px; margin: 0.25rem 0 0.75rem 0; white-space: pre-wrap; }
+  .lca-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.78rem;
+               font-weight: 600; color: #fff; margin-right: 6px; }
+  .lca-muted { color: #5B6573; font-size: 0.88rem; }
+  /* tabs scroll instead of wrapping on small screens */
+  [data-baseweb="tab-list"] { overflow-x: auto; scrollbar-width: thin; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 """, unsafe_allow_html=True)
 
-# ========== FUNGSI FORMAT LEAD TIME UNTUK SEMUA TAB ==========
+
+# ============================================================ formatting
 def minutes_to_dd_hh_mm_ss(minutes):
     """Convert minutes to dd:hh:mm:ss format"""
     if minutes is None or minutes < 0:
         return "00:00:00:00"
-    
     total_seconds = int(minutes * 60)
-    
     days = total_seconds // (24 * 3600)
     remaining_seconds = total_seconds % (24 * 3600)
-    
     hours = remaining_seconds // 3600
     remaining_seconds %= 3600
-    
     mins = remaining_seconds // 60
     secs = remaining_seconds % 60
-    
     return f"{days:02d}:{hours:02d}:{mins:02d}:{secs:02d}"
+
 
 def format_lead_time(minutes):
     """Format lead time ke dd:hh:mm:ss"""
     if minutes is None:
         return "N/A"
-    
     try:
         minutes_float = float(minutes)
         if minutes_float <= 0:
             return "00:00:00:00"
-        
         return minutes_to_dd_hh_mm_ss(minutes_float)
     except (ValueError, TypeError):
         return "N/A"
 
-def main_interface():
-    """Main interface dengan upload dua file"""
-    st.markdown('<h1 class="main-header">🤖 Live Chat Analysis</h1>', unsafe_allow_html=True)
-    st.markdown("Upload both conversation data and complaint data for comprehensive analysis")
-    
-    # Initialize session state
-    if 'analysis_complete' not in st.session_state:
-        st.session_state.analysis_complete = False
-    if 'analysis_results' not in st.session_state:
-        st.session_state.analysis_results = None
-    if 'analysis_stats' not in st.session_state:
-        st.session_state.analysis_stats = None
-    if 'excel_file_path' not in st.session_state:
-        st.session_state.excel_file_path = None
-    
-    # Sidebar untuk upload
-    with st.sidebar:
-        st.header("📁 Data Upload")
-        
-        # File 1: Raw Conversation Data
-        st.subheader("1. Raw Conversation Data")
-        uploaded_raw_file = st.file_uploader(
-            "Upload Raw Conversation Excel", 
-            type=['xlsx', 'xls'],
-            help="Format: No, Ticket Number, Role, Sender, Message Date, Message",
-            key="raw_uploader"
-        )
-        
-        # File 2: Complaint Data
-        st.subheader("2. Complaint Data")
-        uploaded_complaint_file = st.file_uploader(
-            "Upload Complaint Data Excel", 
-            type=['xlsx', 'xls'],
-            help="Format dengan kolom No.Handphone dan Lead Time (Solved)",
-            key="complaint_uploader"
-        )
-        
-        # Demo: pakai file contoh (data sintetis) kalau user tidak punya file
-        if st.checkbox("🧪 Pakai data contoh (demo)", key="use_sample",
-                       help="Data sintetis 40 tiket, bukan data pelanggan asli"):
-            uploaded_raw_file = "sample_data/raw_conversation_sample.xlsx"
-            uploaded_complaint_file = "sample_data/complaint_sample.xlsx"
-            st.caption("Download contoh format:")
-            for _p in (uploaded_raw_file, uploaded_complaint_file):
-                with open(_p, "rb") as _f:
-                    st.download_button(os.path.basename(_p), _f.read(), file_name=os.path.basename(_p), key=f"dl_{_p}")
 
-        if uploaded_raw_file is not None:
-            st.success(f"✅ Raw file: {getattr(uploaded_raw_file, 'name', uploaded_raw_file)}")
-            
-        if uploaded_complaint_file is not None:
-            st.success(f"✅ Complaint file: {getattr(uploaded_complaint_file, 'name', uploaded_complaint_file)}")
-        
-        # Preview data
-        if st.checkbox("Preview uploaded data"):
-            if uploaded_raw_file is not None:
-                try:
-                    df_preview = pd.read_excel(uploaded_raw_file)
-                    st.write(f"Raw data shape: {df_preview.shape}")
-                    st.dataframe(df_preview.head(5))
-                except Exception as e:
-                    st.error(f"Error previewing raw data: {e}")
-            
-            if uploaded_complaint_file is not None:
-                try:
-                    df_complaint_preview = pd.read_excel(uploaded_complaint_file)
-                    st.write(f"Complaint data shape: {df_complaint_preview.shape}")
-                    st.dataframe(df_complaint_preview.head(5))
-                except Exception as e:
-                    st.error(f"Error previewing complaint data: {e}")
-        
-        st.markdown("---")
-        st.header("⚙️ Analysis Settings")
-        
-        max_tickets = st.slider(
-            "Maximum Tickets to Analyze",
-            min_value=0,
-            max_value=10000,
-            value=100,
-            help="Limit number of tickets for faster analysis"
-        )
-        
-        st.markdown("---")
-        
-        # Analysis Button
-        if uploaded_raw_file is not None and uploaded_complaint_file is not None:
-            if st.button("🚀 START ANALYSIS", type="primary", use_container_width=True):
-                with st.spinner("🔄 Starting analysis..."):
-                    results, stats, excel_path = run_enhanced_analysis(
-                        uploaded_raw_file, uploaded_complaint_file, max_tickets
-                    )
-                    
-                    if results is not None and stats is not None:
-                        st.session_state.analysis_complete = True
-                        st.session_state.analysis_results = results
-                        st.session_state.analysis_stats = stats
-                        st.session_state.excel_file_path = excel_path
-                        st.rerun()
-                    else:
-                        st.error("❌ Analysis failed. Please check your data format.")
+def truncate(text, limit):
+    text = "" if text is None else str(text)
+    return text if len(text) <= limit else text[:limit].rstrip() + "…"
+
+
+def esc(text):
+    """Escape user/customer-provided text before it goes into HTML."""
+    return html.escape("" if text is None else str(text))
+
+
+def md_escape(text):
+    """Escape Markdown control characters in user-provided text."""
+    return "".join("\\" + ch if ch in "\\`*_{}[]()<>#+-.!|~" else ch for ch in str(text))
+
+
+def style_chart(fig, height=320):
+    fig.update_layout(
+        template="plotly_white", height=height,
+        margin=dict(l=8, r=8, t=44, b=8),
+        title=dict(font=dict(size=15), x=0, xanchor="left"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.0, xanchor="right", x=1, title_text=""),
+        font=dict(size=12),
+    )
+    return fig
+
+
+def show_chart(fig, height=320):
+    st.plotly_chart(style_chart(fig, height), use_container_width=True,
+                    config={"displaylogo": False, "responsive": True})
+
+
+# ============================================================ authentication
+def _current_user():
+    user = st.session_state.get("user")
+    if user and not auth.session_still_valid(user):
+        st.session_state.pop("user", None)
+        st.session_state["auth_notice"] = "Your session ended because the account changed. Please sign in again."
+        return None
+    return user
+
+
+def _auth_header(title, subtitle):
+    st.markdown(f'<div class="lca-mark" aria-hidden="true">LC</div>'
+                f'<p class="lca-auth-title">{esc(title)}</p>'
+                f'<p class="lca-auth-sub">{esc(subtitle)}</p>', unsafe_allow_html=True)
+
+
+def render_login():
+    with st.container(key="auth_card"):
+        _auth_header(APP_NAME, "Sign in to continue")
+        notice = st.session_state.pop("auth_notice", None)
+        if notice:
+            st.info(notice)
+        if auth.count_users() == 0:
+            st.warning("No accounts exist yet. Create one on the server with "
+                       "`python manage_users.py create --email you@company.com`.")
+        with st.form("login_form", border=False):
+            email = st.text_input("Email", autocomplete="email", key="login_email")
+            password = st.text_input("Password", type="password", autocomplete="current-password")
+            submitted = st.form_submit_button("Sign in", type="primary", use_container_width=True)
+        if submitted:
+            if not email.strip() or not password:
+                st.error("Enter your email and password.")
+            else:
+                with st.spinner("Signing in…"):
+                    result = auth.authenticate(email, password)
+                if result.status == auth.LoginResult.OK:
+                    st.session_state["user"] = result.user
+                    st.rerun()
+                elif result.status == auth.LoginResult.LOCKED:
+                    st.error("Too many failed attempts. Wait 15 minutes or reset your password.")
+                else:
+                    st.error("The email or password is incorrect.")
+        if st.button("Forgot password?", type="tertiary"):
+            st.session_state["auth_view"] = "forgot"
+            st.rerun()
+
+
+def render_forgot():
+    with st.container(key="auth_card"):
+        _auth_header("Reset your password",
+                     "Enter the email you sign in with. We'll send a link to choose a new password.")
+        if st.session_state.get("reset_requested_for"):
+            st.success(f"If an account exists for {md_escape(st.session_state['reset_requested_for'])}, "
+                       f"a reset link is on its way. The link works once and expires in "
+                       f"{auth.reset_ttl_minutes()} minutes.")
+            st.caption("Didn't get it? Check your spam folder, or ask your administrator to confirm "
+                       "the address on your account.")
         else:
-            st.warning("⚠️ Please upload both files to start analysis")
-        
-            st.markdown("---")
-            st.markdown("### 📖 How to Use")
+            with st.form("forgot_form", border=False):
+                email = st.text_input("Email", autocomplete="email")
+                submitted = st.form_submit_button("Send reset link", type="primary", use_container_width=True)
+            if submitted:
+                if not auth.is_valid_email(email):
+                    st.error("Enter a valid email address.")
+                else:
+                    with st.spinner("Sending…"):
+                        auth.request_password_reset(email)
+                    st.session_state["reset_requested_for"] = auth.normalise_email(email)
+                    st.rerun()
+        if st.button("Back to sign in", type="tertiary"):
+            st.session_state.pop("reset_requested_for", None)
+            st.session_state["auth_view"] = "login"
+            st.rerun()
 
-            with st.expander("🤖 Hybrid Intelligence Engine Features", expanded=True):
-                st.markdown("**🧠 Core AI & Algorithms**")
-                st.markdown("• **Hybrid Architecture:** Combines Rule-Based Keywords (precision) with Machine Learning (flexibility)")
-                st.markdown("• **Semantic Matching:** Uses TF-IDF Vectorization & Cosine Similarity for semantic understanding")  
-                st.markdown("• **Golden Answer Validation:** Measures similarity against Ground Truth dataset")
-                st.markdown("")
-                
-                st.markdown("**🔍 Advanced Detection Logic**")
-                st.markdown("• **Smart Role & Bot Filtering:** Removes bot navigation commands")
-                st.markdown("• **Intent Scoring System:** Combines Keyword Urgency + ML Confidence")
-                st.markdown("")
-                
-                st.markdown("**📈 Performance Metrics**")
-                st.markdown("• **First & Final Reply Compliance:** Validates operator response quality")
-                st.markdown("• **Enhanced Customer Leave:** Detects true abandonment vs waiting")
-                st.markdown("• **Quality Scoring (0-6):** Automated 6-point assessment")
-                st.markdown("")
-                
-                st.markdown("**🛡️ System Robustness**")
-                st.markdown("• **Fail-Safe Mechanism:** Falls back to Rule-Based mode if ML fails")
-                st.markdown("• **Multi-Format Support:** Handles .xlsx with Complaint matching")
-    
-    # Main content area
-    if uploaded_raw_file is not None and uploaded_complaint_file is not None:
-        st.markdown("---")
-        st.markdown("## 🚀 Ready for Analysis")
-        
-        col1, col2, col3 = st.columns([1, 2, 1])
-        
-        with col2:
-            if st.button("🎯 Start Analysis", type="primary", use_container_width=True):
-                with st.spinner("🔄 Starting analysis..."):
-                    results, stats, excel_path = run_enhanced_analysis(
-                        uploaded_raw_file, uploaded_complaint_file, max_tickets
-                    )
-                    
-                    if results is not None and stats is not None:
-                        st.session_state.analysis_complete = True
-                        st.session_state.analysis_results = results
-                        st.session_state.analysis_stats = stats
-                        st.session_state.excel_file_path = excel_path
-                        st.rerun()
-                    else:
-                        st.error("❌ Analysis failed. Please check your data format.")
-    
-    else:
-        # Show upload reminder
-        st.markdown("---")
-        st.success("🧪 **Mau langsung coba?** Centang **\"Pakai data contoh (demo)\"** di sidebar kiri, "
-                   "lalu klik **START ANALYSIS**. Data contoh berisi 40 tiket sintetis.")
-        st.markdown("## 📤 Upload Required Files")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.info("""
-            **Raw Conversation Data**
-            - Format: Excel file
-            - Required columns: 
-              - Ticket Number
-              - Role  
-              - Sender
-              - Message Date
-              - Message
-            """)
-        
-        with col2:
-            st.info("""
-            **Complaint Data** 
-            - Format: Excel file
-            - Required columns:
-              - No.Handphone
-              - Lead Time (Solved)
-            - For complaint ticket matching
-            """)
 
-def run_enhanced_analysis(uploaded_raw_file, uploaded_complaint_file, max_tickets):
-    """Run enhanced analysis dengan kedua file - FIXED VERSION"""
+def render_reset(token):
+    with st.container(key="auth_card"):
+        if st.session_state.get("reset_done"):
+            _auth_header("Password updated", "You can now sign in with your new password.")
+            if st.button("Go to sign in", type="primary", use_container_width=True):
+                st.session_state.pop("reset_done", None)
+                st.session_state["auth_view"] = "login"
+                st.query_params.clear()
+                st.rerun()
+            return
+
+        status = auth.check_reset_token(token)
+        if status != auth.TokenStatus.VALID:
+            messages = {
+                auth.TokenStatus.EXPIRED: ("This link has expired", "Reset links are valid for a limited time. Request a new one."),
+                auth.TokenStatus.USED: ("This link was already used", "Each reset link works once. Request a new one if you still need it."),
+            }
+            title, sub = messages.get(status, ("This link is not valid",
+                                               "Check that you opened the full link from the email, or request a new one."))
+            _auth_header(title, sub)
+            if st.button("Request a new link", type="primary", use_container_width=True):
+                st.query_params.clear()
+                st.session_state["auth_view"] = "forgot"
+                st.rerun()
+            return
+
+        _auth_header("Choose a new password",
+                     f"Use at least {auth.PASSWORD_MIN_LENGTH} characters. A short phrase is easier to remember.")
+        with st.form("reset_form", border=False):
+            new_pw = st.text_input("New password", type="password", autocomplete="new-password")
+            confirm = st.text_input("Confirm new password", type="password", autocomplete="new-password")
+            submitted = st.form_submit_button("Update password", type="primary", use_container_width=True)
+        if submitted:
+            if new_pw != confirm:
+                st.error("The passwords don't match.")
+                return
+            with st.spinner("Updating…"):
+                status, problems = auth.reset_password(token, new_pw)
+            if problems:
+                st.error(" ".join(problems))
+            elif status == auth.TokenStatus.VALID:
+                st.session_state["reset_done"] = True
+                st.session_state.pop("user", None)
+                st.rerun()
+            else:
+                st.error("This link can no longer be used. Request a new one.")
+
+
+def render_topbar(user):
+    with st.container(key="topbar"):
+        c1, c2, c3 = st.columns([3, 3, 1], vertical_alignment="center")
+        c1.markdown(f'<span class="lca-brand">{APP_NAME}</span>', unsafe_allow_html=True)
+        c2.markdown(f'<div class="lca-user">{esc(user.get("name") or user["email"])}'
+                    f'{" · " + esc(user["email"]) if user.get("name") else ""}</div>',
+                    unsafe_allow_html=True)
+        if c3.button("Sign out", type="tertiary", key="sign_out"):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.session_state["auth_notice"] = "You have signed out."
+            st.rerun()
+
+
+# ============================================================ data loading
+def _source_key(source):
+    if source is None:
+        return None
+    if isinstance(source, str):
+        return f"path:{source}"
+    return f"upload:{getattr(source, 'file_id', None) or source.name}:{source.size}"
+
+
+def load_excel(source, required_columns):
+    """Read an uploaded workbook once per file; returns (df, error message)."""
+    key = _source_key(source)
+    cache = st.session_state.setdefault("_file_cache", {})
+    if key in cache:
+        return cache[key]
     try:
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        # Step 1: Load Data
-        status_text.text("📊 Loading and processing data...")
-        progress_bar.progress(20)
-        
-        # Load raw data
-        raw_df = pd.read_excel(uploaded_raw_file)
-        st.success(f"✅ Loaded {len(raw_df)} rows from raw conversation data")
-        
-        # Load complaint data
-        complaint_df = pd.read_excel(uploaded_complaint_file)
-        st.success(f"✅ Loaded {len(complaint_df)} rows from complaint data")
-        
-        # Step 2: Preprocess Data
-        status_text.text("🔄 Preprocessing conversation data...")
-        progress_bar.progress(40)
-        
-        preprocessor = DataPreprocessor()
-        processed_df = preprocessor.clean_data(raw_df)
-        
-        # Step 3: Initialize Pipeline dengan Data yang Sudah Di-load
-        status_text.text("🔧 Initializing analysis pipeline...")
-        progress_bar.progress(60)
-        
-        # Simpan complaint file temporary dan initialize pipeline
-        with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp_complaint:
-            complaint_df.to_excel(tmp_complaint.name, index=False)
-            pipeline = CompleteAnalysisPipeline(complaint_data_path=tmp_complaint.name)
-        
-        # Step 4: Run Analysis
-        status_text.text("🔍 Analyzing conversations with logic...")
-        progress_bar.progress(80)
-        
-        results, stats = pipeline.analyze_all_tickets(processed_df, max_tickets=max_tickets)
-        
-        if not results:
-            st.error("❌ No results generated from analysis")
-            return None, None, None
-            
-        successful = [r for r in results if r['status'] == 'success']
-        st.success(f"✅ Successfully analyzed {len(successful)} conversations")
-        
-        # Step 5: Export Results
-        status_text.text("💾 Generating comprehensive report...")
-        progress_bar.progress(95)
-        
-        exporter = ResultsExporter()
-        excel_path = exporter.export_comprehensive_results(results, stats)
-        
-        progress_bar.progress(100)
-        status_text.text("✅ analysis complete!")
-        
-        return results, stats, excel_path
-        
+        if not isinstance(source, str):
+            source.seek(0)
+        df = pd.read_excel(source)
+        missing = [c for c in required_columns if c not in df.columns]
+        if missing:
+            out = (None, f"Missing column{'s' if len(missing) > 1 else ''}: {', '.join(missing)}. "
+                         f"Found: {', '.join(map(str, df.columns[:8]))}{'…' if len(df.columns) > 8 else ''}")
+        elif df.empty:
+            out = (None, "The sheet has no rows.")
+        else:
+            out = (df, None)
     except Exception as e:
-        st.error(f"❌ analysis error: {str(e)}")
-        st.error(f"Detailed error: {traceback.format_exc()}")
+        log.warning("Could not read workbook: %s", e)
+        out = (None, "This file could not be read as an Excel workbook (.xlsx).")
+    cache[key] = out
+    return out
+
+
+def _describe_raw(df):
+    tickets = df['Ticket Number'].nunique()
+    dates = pd.to_datetime(df['Message Date'], errors='coerce').dropna()
+    span = f" · {dates.min():%d %b %Y} – {dates.max():%d %b %Y}" if not dates.empty else ""
+    return f"{len(df):,} messages · {tickets:,} tickets{span}", tickets
+
+
+# ============================================================ upload screen
+def main_interface():
+    st.markdown("## New analysis")
+    st.markdown('<p class="lca-muted">Upload the live chat export and the complaint list for the same '
+                'period. Files are used only for this session and are not kept on the server.</p>',
+                unsafe_allow_html=True)
+
+    use_sample = st.toggle("Use sample data (40 synthetic tickets, no real customers)", key="use_sample")
+
+    raw_df = complaint_df = None
+    total_tickets = 0
+    col1, col2 = st.columns(2, gap="medium")
+    with col1:
+        with st.container(border=True):
+            st.markdown("**1. Conversation export**")
+            if use_sample:
+                raw_source = SAMPLE_RAW
+                st.caption(f"Using `{os.path.basename(SAMPLE_RAW)}`")
+            else:
+                raw_source = st.file_uploader("Conversation export (.xlsx)", type=['xlsx'], key="raw_uploader",
+                                              label_visibility="collapsed")
+            st.caption("Columns: " + ", ".join(RAW_REQUIRED_COLUMNS))
+            if raw_source is not None:
+                raw_df, err = load_excel(raw_source, RAW_REQUIRED_COLUMNS)
+                if err:
+                    st.error(err)
+                else:
+                    summary, total_tickets = _describe_raw(raw_df)
+                    st.success(summary, icon=":material/check_circle:")
+    with col2:
+        with st.container(border=True):
+            st.markdown("**2. Complaint list**")
+            if use_sample:
+                complaint_source = SAMPLE_COMPLAINT
+                st.caption(f"Using `{os.path.basename(SAMPLE_COMPLAINT)}`")
+            else:
+                complaint_source = st.file_uploader("Complaint list (.xlsx)", type=['xlsx'], key="complaint_uploader",
+                                                    label_visibility="collapsed")
+            st.caption("Columns: " + ", ".join(COMPLAINT_REQUIRED_COLUMNS))
+            if complaint_source is not None:
+                complaint_df, err = load_excel(complaint_source, COMPLAINT_REQUIRED_COLUMNS)
+                if err:
+                    st.error(err)
+                else:
+                    st.success(f"{len(complaint_df):,} complaint records", icon=":material/check_circle:")
+    # keep only the files currently selected in memory
+    active = {_source_key(raw_source), _source_key(complaint_source)}
+    st.session_state["_file_cache"] = {k: v for k, v in st.session_state.get("_file_cache", {}).items() if k in active}
+
+    if raw_df is not None:
+        with st.expander("Preview the first rows"):
+            st.dataframe(raw_df.head(10), use_container_width=True, hide_index=True)
+            if complaint_df is not None:
+                st.dataframe(complaint_df.head(10), use_container_width=True, hide_index=True)
+
+    ready = raw_df is not None and complaint_df is not None
+    max_tickets = None
+    if ready:
+        scope = st.radio("Tickets to analyze", [f"All {total_tickets:,} tickets", "Only the first N tickets"],
+                         horizontal=True, key="scope")
+        if scope.startswith("Only"):
+            max_tickets = st.number_input("Number of tickets", min_value=1, max_value=max(total_tickets, 1),
+                                          value=min(100, total_tickets), step=50)
+        if total_tickets > 2000 and max_tickets is None:
+            st.caption("Large files can take several minutes. Keep this tab open while it runs.")
+
+    clicked = st.button("Run analysis", type="primary", disabled=not ready,
+                        help=None if ready else "Upload both files first")
+    if not ready and not use_sample:
+        st.caption("No files at hand? Turn on **Use sample data** above, or download the sample files to see the expected format.")
+        c1, c2, _ = st.columns([1, 1, 2])
+        for col, path in ((c1, SAMPLE_RAW), (c2, SAMPLE_COMPLAINT)):
+            with open(path, "rb") as f:
+                col.download_button(os.path.basename(path), f.read(), file_name=os.path.basename(path),
+                                    icon=":material/download:", key=f"dl_{path}")
+
+    if clicked and ready:
+        results, stats, report = run_enhanced_analysis(raw_df, complaint_df, max_tickets)
+        if results is not None:
+            st.session_state.analysis_complete = True
+            st.session_state.analysis_results = results
+            st.session_state.analysis_stats = stats
+            st.session_state.report_bytes = report
+            st.session_state.analysis_meta = {
+                "finished_at": datetime.now(),
+                "total_tickets": total_tickets,
+                "source": "Sample data" if use_sample else getattr(raw_source, "name", ""),
+            }
+            st.rerun()
+
+
+def run_enhanced_analysis(raw_df, complaint_df, max_tickets):
+    """Run the analysis pipeline; returns (results, stats, excel bytes) or (None, None, None)."""
+    progress = st.progress(0, text="Preparing data…")
+    complaint_path = report_path = None
+    try:
+        processed_df = DataPreprocessor().clean_data(raw_df)
+        if processed_df is None or processed_df.empty:
+            progress.empty()
+            st.error("No usable messages were found. Check that **Message**, **Ticket Number** and "
+                     "**Message Date** are filled in and that dates are valid.")
+            return None, None, None
+
+        # The pipeline reads the complaint list from a path.
+        with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
+            complaint_path = tmp.name
+        complaint_df.to_excel(complaint_path, index=False)
+        pipeline = CompleteAnalysisPipeline(complaint_data_path=complaint_path)
+
+        def on_progress(done, total):
+            if done == total or done % 5 == 0:
+                progress.progress(min(done / total, 1.0) * 0.95, text=f"Analyzing ticket {done:,} of {total:,}…")
+
+        results, stats = pipeline.analyze_all_tickets(processed_df, max_tickets=max_tickets,
+                                                      progress_callback=on_progress)
+        if not results:
+            progress.empty()
+            st.error("The analysis produced no results.")
+            return None, None, None
+
+        progress.progress(0.97, text="Building the Excel report…")
+        report_path = ResultsExporter().export_comprehensive_results(results, stats)
+        report = None
+        if report_path and os.path.exists(report_path):
+            with open(report_path, "rb") as f:
+                report = f.read()
+        progress.empty()
+        return results, stats, report
+    except Exception as e:
+        progress.empty()
+        log.exception("Analysis failed")
+        st.error("The analysis stopped because of an unexpected error. Check the file format and try again.")
+        with st.expander("Technical details"):
+            st.code(f"{e.__class__.__name__}: {e}\n\n{traceback.format_exc()}")
         return None, None, None
+    finally:
+        # do not leave customer data on the server
+        for path in (complaint_path, report_path):
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+
+
+# ============================================================ results screen
+def reset_analysis():
+    for key in ['analysis_complete', 'analysis_results', 'analysis_stats', 'report_bytes', 'analysis_meta']:
+        st.session_state.pop(key, None)
+
 
 def display_enhanced_results():
-    """Display enhanced analysis results dengan error handling"""
     results = st.session_state.analysis_results
     stats = st.session_state.analysis_stats
-    
+    meta = st.session_state.get("analysis_meta", {})
+
     if not stats:
-        st.error("❌ No analysis statistics available")
+        st.error("No analysis statistics available")
         return
-    
-    st.markdown("---")
-    st.markdown('<h1 class="main-header">📊 Live Chat Performance Dashboard</h1>', unsafe_allow_html=True)
-    
-    # QUICK OVERVIEW METRICS
-    st.markdown("## 📈 Executive Summary")
-    
-    col1, col2, col3 = st.columns(3)
 
-    with col1:
-        total_tickets = stats.get('total_tickets', 0)
-        st.markdown(f"""
-        <div class="metric-card">
-            <h3>Total Conversations</h3>
-            <h1>{total_tickets}</h1>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col2:
-        success_rate = stats.get('success_rate', 0) * 100
-        st.markdown(f"""
-        <div class="metric-card">
-            <h3>Analysis Success Rate</h3>
-            <h1>{success_rate:.1f}%</h1>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col3:
-        if 'issue_type_distribution' in stats:
-            total_issues = sum(stats['issue_type_distribution'].values())
+    head, actions = st.columns([3, 2], vertical_alignment="bottom")
+    with head:
+        st.markdown("## Analysis results")
+        analyzed = stats.get('total_tickets', 0)
+        total = meta.get("total_tickets") or analyzed
+        scope = f"{analyzed:,} of {total:,} tickets" if total and total != analyzed else f"{analyzed:,} tickets"
+        finished = meta.get("finished_at")
+        st.markdown(f'<p class="lca-muted">{esc(meta.get("source") or "Uploaded data")} · {scope}'
+                    f'{" · run at " + finished.strftime("%d %b %Y %H:%M") if finished else ""}</p>',
+                    unsafe_allow_html=True)
+    with actions:
+        a1, a2 = st.columns(2)
+        if st.session_state.get("report_bytes"):
+            a1.download_button(
+                "Excel report", data=st.session_state.report_bytes,
+                file_name=f"chat_analysis_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary", icon=":material/download:", use_container_width=True)
         else:
-            total_issues = 0
-            
-        st.markdown(f"""
-        <div class="metric-card">
-            <h3>Successfully Analyzed Inquiries</h3>
-            <h1>{total_issues}</h1>
-        </div>
-        """, unsafe_allow_html=True)
+            a1.caption("Excel report unavailable")
+        if a2.button("New analysis", icon=":material/upload_file:", use_container_width=True):
+            reset_analysis()
+            st.rerun()
 
-    # DOWNLOAD SECTION
-    st.markdown("---")
-    st.markdown("## 💾 Download Complete Analysis Report")
-    
-    if st.session_state.get('excel_file_path') and os.path.exists(st.session_state.excel_file_path):
-        with open(st.session_state.excel_file_path, "rb") as f:
-            excel_data = f.read()
-        
-        st.download_button(
-            label="📥 DOWNLOAD FULL EXCEL REPORT",
-            data=excel_data,
-            file_name=f"chat_analysis_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            type="primary",
-            use_container_width=True
-        )
-        st.success("✅ Report contains detailed analysis, lead times, performance metrics, and raw data")
-    else:
-        st.error("❌ Excel file not available for download")
-
-    # TABS
-    st.markdown("---")
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-        "📊 Overview", "🎯 Inquiry Types", "⏱️ Lead Times", "📈 Performance", 
-        "🚨 Special Cases", "🔍 All Data", "❌ Failed Analysis", "🐛 Debug"
-    ])
-    
-    with tab1:
+    failed_count = stats.get('failed_analysis', 0)
+    tabs = st.tabs(["Overview", "Lead times", "Inquiry types", "Performance", "Tickets",
+                    f"Data quality{f' ({failed_count})' if failed_count else ''}"])
+    with tabs[0]:
         display_professional_overview_tab(results, stats)
-    
-    with tab2:
-        display_issue_types_tab(results, stats)
-    
-    with tab3:
+    with tabs[1]:
         display_enhanced_lead_time_tab(results, stats)
-    
-    with tab4:
+    with tabs[2]:
+        display_issue_types_tab(results, stats)
+    with tabs[3]:
         display_performance_tab(results, stats)
-    
-    with tab5:
-        display_enhanced_special_cases_tab(results, stats)
-    
-    with tab6:
-        display_raw_data_tab(results)
+    with tabs[4]:
+        display_ticket_explorer_tab(results)
+    with tabs[5]:
+        display_data_quality_tab(results, stats)
 
-    with tab7:
-        display_failed_analysis_tab(results, stats)
 
-    with tab8:
-        display_debug_tab(results, stats)
-
-    # NEW ANALYSIS BUTTON
-    st.markdown("---")
-    if st.button("🔄 Analyze New Data", type="secondary", use_container_width=True):
-        # Reset session state
-        for key in ['analysis_complete', 'analysis_results', 'analysis_stats', 'excel_file_path']:
-            if key in st.session_state:
-                del st.session_state[key]
-        st.rerun()
-
-def display_failed_analysis_tab(results, stats):
-    """Display detailed failed analysis"""
-    st.markdown("## ❌ Failed Analysis Details")
-    
-    failed_results = [r for r in results if r['status'] == 'failed']
-    
-    if failed_results:
-        st.error(f"**{len(failed_results)} tickets** failed to analyze")
-        
-        # Summary failure reasons
-        if 'failure_reasons' in stats and stats['failure_reasons']:
-            st.markdown("### 📊 Failure Reasons Summary")
-            
-            failure_data = []
-            for reason, tickets in stats['failure_reasons'].items():
-                failure_data.append({
-                    'Failure Reason': reason,
-                    'Count': len(tickets),
-                    'Percentage': f"{(len(tickets) / len(failed_results)) * 100:.1f}%",
-                    'Example Tickets': ', '.join(tickets[:3]) + ('...' if len(tickets) > 3 else '')
-                })
-            
-            df_failures = pd.DataFrame(failure_data)
-            st.dataframe(df_failures, use_container_width=True)
-            
-            # Pie chart
-            fig_failures = px.pie(
-                df_failures, 
-                values='Count', 
-                names='Failure Reason',
-                title='Failure Reasons Distribution'
-            )
-            st.plotly_chart(fig_failures, use_container_width=True)
-        else:
-            st.info("No detailed failure reasons available in statistics")
-        
-        # Detailed failed tickets
-        st.markdown("### 📋 Detailed Failed Tickets")
-        
-        failed_details = []
-        for result in failed_results:
-            failed_details.append({
-                'Ticket ID': result['ticket_id'],
-                'Failure Reason': result.get('failure_reason', 'Unknown'),
-                'Analysis Time': result.get('analysis_timestamp')
-            })
-        
-        df_failed_details = pd.DataFrame(failed_details)
-        st.dataframe(df_failed_details, use_container_width=True)
-        
-    else:
-        st.success("✅ No failed analyses! All tickets were successfully processed.")
-
-def calculate_lead_time_stats(results):
-    """Calculate lead time statistics dari results"""
-    successful = [r for r in results if r['status'] == 'success']
-    
-    if not successful:
-        return {
-            'first_lead_times': [],
-            'final_lead_times_minutes': [],
-            'first_avg_minutes': 0,
-            'final_avg_minutes': 0,
-            'first_samples': 0,
-            'final_samples': 0
-        }
-    
-    all_first_lead_times = []
-    all_final_lead_times_minutes = []
-    
-    for result in successful:
-        # First reply lead times
-        first_lt = result.get('first_reply_lead_time_minutes')
-        if _is_valid_lead_time(first_lt):
-            all_first_lead_times.append(float(first_lt))
-        
-        # Final reply lead times - Convert SEMUA ke minutes
-        final_lt_minutes = None
-        if result.get('final_issue_type') == 'complaint':
-            final_lt_days = result.get('final_reply_lead_time_days')
-            if _is_valid_lead_time(final_lt_days):
-                final_lt_minutes = float(final_lt_days) * 24 * 60
-        else:
-            final_lt_min = result.get('final_reply_lead_time_minutes')
-            if _is_valid_lead_time(final_lt_min):
-                final_lt_minutes = float(final_lt_min)
-        
-        if final_lt_minutes is not None and final_lt_minutes > 0:
-            all_final_lead_times_minutes.append(final_lt_minutes)
-    
-    return {
-        'first_lead_times': all_first_lead_times,
-        'final_lead_times_minutes': all_final_lead_times_minutes,
-        'first_avg_minutes': np.mean(all_first_lead_times) if all_first_lead_times else 0,
-        'final_avg_minutes': np.mean(all_final_lead_times_minutes) if all_final_lead_times_minutes else 0,
-        'first_samples': len(all_first_lead_times),
-        'final_samples': len(all_final_lead_times_minutes)
-    }
-
+# ------------------------------------------------------------ shared calculations
 def _is_valid_lead_time(value):
     """Check if lead time value is valid untuk perhitungan"""
     if value is None or value == 'N/A':
         return False
     try:
-        float_value = float(value)
-        return float_value > 0  # Hanya nilai positif yang valid
+        return float(value) > 0
     except (ValueError, TypeError):
         return False
-    
-def display_professional_overview_tab(results, stats):
-    """Display professional overview tab dengan rangkuman penting"""
-    st.markdown("## 📊 Performance Overview")
-    
+
+
+def _final_lead_time_minutes(result):
+    """Final reply lead time in minutes (complaint lead times are recorded in days)."""
+    if result.get('final_issue_type') == 'complaint':
+        days = result.get('final_reply_lead_time_days')
+        return float(days) * 24 * 60 if _is_valid_lead_time(days) else None
+    minutes = result.get('final_reply_lead_time_minutes')
+    return float(minutes) if _is_valid_lead_time(minutes) else None
+
+
+def _first_lead_time_minutes(result):
+    minutes = result.get('first_reply_lead_time_minutes')
+    return float(minutes) if _is_valid_lead_time(minutes) else None
+
+
+def calculate_lead_time_stats(results):
+    """Calculate lead time statistics dari results"""
     successful = [r for r in results if r['status'] == 'success']
-    
-    # ROW 1: Key Metrics
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        if 'issue_type_distribution' in stats:
-            total_issues = sum(stats['issue_type_distribution'].values())
-            normal_pct = (stats['issue_type_distribution'].get('normal', 0) / total_issues * 100) if total_issues > 0 else 0
-            st.metric("Normal Inquiries", f"{normal_pct:.1f}%")
-        else:
-            st.metric("Normal Inquiries", "0%")
-    
-    with col2:
-        if 'issue_type_distribution' in stats:
-            total_issues = sum(stats['issue_type_distribution'].values())
-            serious_pct = (stats['issue_type_distribution'].get('serious', 0) / total_issues * 100) if total_issues > 0 else 0
-            st.metric("Serious Cases", f"{serious_pct:.1f}%")
-        else:
-            st.metric("Serious Cases", "0%")
-    
-    with col3:
-        if 'issue_type_distribution' in stats:
-            total_issues = sum(stats['issue_type_distribution'].values())
-            complaint_pct = (stats['issue_type_distribution'].get('complaint', 0) / total_issues * 100) if total_issues > 0 else 0
-            st.metric("Complaint Cases", f"{complaint_pct:.1f}%")
-        else:
-            st.metric("Complaint Cases", "0%")
-    
-    with col4:
-        if 'reply_effectiveness' in stats:
-            customer_leave = stats['reply_effectiveness'].get('customer_leave_cases', 0)
-            total_successful = stats.get('successful_analysis', 1)
-            leave_rate = (customer_leave / total_successful * 100) if total_successful > 0 else 0
-            st.metric("Customer Leave Rate", f"{leave_rate:.1f}%")
-        else:
-            st.metric("Customer Leave Rate", "0%")
-    
-    # ROW 2: Charts
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Inquiry Type Distribution Pie Chart
-        if 'issue_type_distribution' in stats and stats['issue_type_distribution']:
-            issue_types = list(stats['issue_type_distribution'].keys())
-            counts = list(stats['issue_type_distribution'].values())
-            
-            colors = ['#2E86AB', '#A23B72', '#F18F01']  # normal, serious, complaint
-            color_map = {}
-            for i, issue_type in enumerate(issue_types):
-                if i < len(colors):
-                    color_map[issue_type] = colors[i]
-                else:
-                    color_map[issue_type] = '#999999'
-            
-            fig_issues = px.pie(
-                values=counts, 
-                names=issue_types,
-                title='Inquiry Type Distribution',
-                color=issue_types,
-                color_discrete_map=color_map
-            )
-            fig_issues.update_layout(showlegend=True)
-            st.plotly_chart(fig_issues, use_container_width=True)
-        else:
-            st.info("📊 No inquiry type data available for visualization")
-    
-    with col2:
-        # Performance Distribution
-        if 'performance_distribution' in stats and stats['performance_distribution']:
-            performances = list(stats['performance_distribution'].keys())
-            counts = list(stats['performance_distribution'].values())
-            
-            # Sort performances dalam order yang meaningful
-            performance_order = ['excellent', 'good', 'fair', 'poor']
-            performances_sorted = [p for p in performance_order if p in performances]
-            counts_sorted = [counts[performances.index(p)] for p in performances_sorted]
-            
-            fig_perf = px.bar(
-                x=performances_sorted, 
-                y=counts_sorted,
-                title='Performance Rating Distribution',
-                labels={'x': 'Performance Rating', 'y': 'Number of Conversations'},
-                color=performances_sorted,
-                color_discrete_map={
-                    'excellent': '#28a745',
-                    'good': '#17a2b8', 
-                    'fair': '#ffc107',
-                    'poor': '#dc3545'
-                }
-            )
-            fig_perf.update_layout(xaxis_title="Performance Rating", yaxis_title="Count")
-            st.plotly_chart(fig_perf, use_container_width=True)
-        else:
-            st.info("📈 No performance data available for visualization")
-    
-    # ROW 3: Lead Time Summary
-    st.markdown("### ⏱️ Lead Time Performance")
-    
-    lead_time_stats = calculate_lead_time_stats(results)
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        first_avg = lead_time_stats['first_avg_minutes']
-        display_first = format_lead_time(first_avg)
-        st.metric("First Reply Avg", display_first)
-    
-    with col2:
-        final_avg = lead_time_stats['final_avg_minutes']
-        display_final = format_lead_time(final_avg)
-        st.metric("Final Reply Avg", display_final)
-    
-    with col3:
-        st.metric("Count of First Reply", lead_time_stats['first_samples'])
-    
-    with col4:
-        st.metric("Count of Final Reply", lead_time_stats['final_samples'])
-    
-    # ROW 4: Reply Effectiveness
-    st.markdown("### 💬 Reply Effectiveness")
-    
-    if 'reply_effectiveness' in stats:
-        eff = stats['reply_effectiveness']
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            first_reply_rate = eff.get('first_reply_found_rate', 0) * 100
-            st.metric("First Reply Found", f"{first_reply_rate:.1f}%")
-        
-        with col2:
-            final_reply_rate = eff.get('final_reply_found_rate', 0) * 100
-            st.metric("Final Reply Found", f"{final_reply_rate:.1f}%")
-        
-        with col3:
-            customer_leave = eff.get('customer_leave_cases', 0)
-            st.metric("Customer Leave Cases", customer_leave)
-    else:
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("First Reply Found", "0%")
-        with col2:
-            st.metric("Final Reply Found", "0%")
-        with col3:
-            st.metric("Customer Leave Cases", 0)
+    first = [v for v in (_first_lead_time_minutes(r) for r in successful) if v is not None]
+    final = [v for v in (_final_lead_time_minutes(r) for r in successful) if v is not None]
+    return {
+        'first_lead_times': first,
+        'final_lead_times_minutes': final,
+        'first_avg_minutes': np.mean(first) if first else 0,
+        'final_avg_minutes': np.mean(final) if final else 0,
+        'first_samples': len(first),
+        'final_samples': len(final),
+    }
 
-def display_enhanced_lead_time_tab(results, stats):
-    """Display enhanced lead time analysis - SEMUA Inquiry Type DISATUKAN"""
-    st.markdown("## ⏱️ Lead Time Analysis")
-    
-    successful = [r for r in results if r['status'] == 'success']
-    
-    # 1. SUMMARY TOTAL
-    st.markdown("### 📊 Overall Lead Time Summary")
-    
-    lead_time_stats = calculate_lead_time_stats(results)
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        first_avg = lead_time_stats['first_avg_minutes']
-        st.metric("First Reply Average", format_lead_time(first_avg))
-    
-    with col2:
-        final_avg = lead_time_stats['final_avg_minutes']
-        st.metric("Final Reply Average", format_lead_time(final_avg))
-    
-    with col3:
-        st.metric("Count of First Reply", lead_time_stats['first_samples'])
-    
-    with col4:
-        st.metric("Count of Final Reply", lead_time_stats['final_samples'])
 
-    # 2. BREAKDOWN PER Inquiry Type (SEMUA DISATUKAN)
-    st.markdown("### 📈 Lead Time Breakdown by Inquiry Type")
-    
-    lead_time_by_type = {}
-    for result in successful:
-        issue_type = result['final_issue_type']
-        if issue_type not in lead_time_by_type:
-            lead_time_by_type[issue_type] = {
-                'first_lead_times': [],
-                'final_lead_times_minutes': []  # Semua dalam minutes
-            }
-        
-        # First reply lead times
-        first_lt = result.get('first_reply_lead_time_minutes')
-        if first_lt is not None and first_lt != 'N/A':
-            try:
-                first_lt_float = float(first_lt)
-                if first_lt_float > 0:
-                    lead_time_by_type[issue_type]['first_lead_times'].append(first_lt_float)
-            except (ValueError, TypeError):
-                pass
-        
-        # Final reply lead times - Convert SEMUA ke minutes
-        final_lt_minutes = None
-        if issue_type == 'complaint':
-            final_lt_days = result.get('final_reply_lead_time_days')
-            if final_lt_days is not None and final_lt_days != 'N/A':
-                try:
-                    final_lt_minutes = float(final_lt_days) * 24 * 60  # Convert days to minutes
-                except (ValueError, TypeError):
-                    pass
-        else:
-            final_lt_min = result.get('final_reply_lead_time_minutes')
-            if final_lt_min is not None and final_lt_min != 'N/A':
-                try:
-                    final_lt_minutes = float(final_lt_min)
-                except (ValueError, TypeError):
-                    pass
-        
-        if final_lt_minutes is not None and final_lt_minutes > 0:
-            lead_time_by_type[issue_type]['final_lead_times_minutes'].append(final_lt_minutes)
-    
-    # Display breakdown table dengan format fleksibel
-    breakdown_data = []
-    for issue_type, data in lead_time_by_type.items():
-        # First reply average
-        first_avg = None
-        if data['first_lead_times']:
-            try:
-                first_avg_minutes = np.mean(data['first_lead_times'])
-                first_avg = format_lead_time(first_avg_minutes)
-            except:
-                first_avg = 'N/A'
-        else:
-            first_avg = 'N/A'
-        
-        # Final reply average
-        final_avg = None
-        if data['final_lead_times_minutes']:
-            try:
-                final_avg_minutes = np.mean(data['final_lead_times_minutes'])
-                final_avg = format_lead_time(final_avg_minutes)
-            except:
-                final_avg = 'N/A'
-        else:
-            final_avg = 'N/A'
-        
-        breakdown_data.append({
-            'Inquiry Type': issue_type.upper(),
-            'First Reply Avg': first_avg,
-            'Final Reply Avg': final_avg,
-            'Count of First Reply': len(data['first_lead_times']),
-            'Count of Final Reply': len(data['final_lead_times_minutes'])
-        })
-    
-    if breakdown_data:
-        df_breakdown = pd.DataFrame(breakdown_data)
-        st.dataframe(df_breakdown, use_container_width=True)
-        st.caption("Format: dd:hh:mm:ss (Days:Hours:Minutes:Seconds)")
-    else:
-        st.info("No lead time data available for breakdown")
-
-    # 3. DISTRIBUTION ANALYSIS - FIRST REPLY
-    st.markdown("### 📊 First Reply Lead Time Distribution - All Cases")
-    
-    # Kumpulkan semua first reply lead times
-    first_reply_data = []
-    for result in successful:
-        first_lt = result.get('first_reply_lead_time_minutes')
-        if first_lt is not None and first_lt != 'N/A':
-            try:
-                first_lt_float = float(first_lt)
-                if first_lt_float > 0:
-                    first_reply_data.append({
-                        'Inquiry Type': result['final_issue_type'].upper(),
-                        'Lead Time (minutes)': first_lt_float,
-                        'Lead Time (hours)': first_lt_float / 60,
-                        'Formatted Lead Time': format_lead_time(first_lt_float)
-                    })
-            except (ValueError, TypeError):
-                pass
-    
-    if first_reply_data:
-        df_first = pd.DataFrame(first_reply_data)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Box plot first reply
-            fig_first_box = px.box(
-                df_first, 
-                x='Inquiry Type', 
-                y='Lead Time (minutes)',
-                title='First Reply Lead Time Distribution (Minutes)',
-                color='Inquiry Type',
-                color_discrete_map={
-                    'NORMAL': '#2E86AB',
-                    'SERIOUS': '#A23B72',
-                    'COMPLAINT': '#F18F01'
-                }
-            )
-            st.plotly_chart(fig_first_box, use_container_width=True)
-        
-        with col2:
-            # Statistics untuk first reply
-            st.markdown("#### 📈 First Reply Statistics")
-            first_stats_data = []
-            for issue_type in df_first['Inquiry Type'].unique():
-                issue_data = df_first[df_first['Inquiry Type'] == issue_type]['Lead Time (minutes)']
-                if len(issue_data) > 0:
-                    first_stats_data.append({
-                        'Inquiry Type': issue_type,
-                        'Count': len(issue_data),
-                        'Average': format_lead_time(np.mean(issue_data)),
-                        'Median': format_lead_time(np.median(issue_data)),
-                        'Min': format_lead_time(np.min(issue_data)),
-                        'Max': format_lead_time(np.max(issue_data))
-                    })
-            
-            if first_stats_data:
-                df_first_stats = pd.DataFrame(first_stats_data)
-                st.dataframe(df_first_stats, use_container_width=True)
-    else:
-        st.info("No first reply lead time data available")
-
-    # 4. DISTRIBUTION ANALYSIS - FINAL REPLY
-    st.markdown("### 📊 Final Reply Lead Time Distribution - All Cases")
-    
-    # Kumpulkan semua final reply lead times dalam minutes
-    final_reply_data = []
-    for result in successful:
-        # Convert semua final reply ke minutes
-        final_lt_minutes = None
-        
-        if result['final_issue_type'] == 'complaint':
-            # Complaint: convert days ke minutes
-            final_lt_days = result.get('final_reply_lead_time_days')
-            if final_lt_days is not None and final_lt_days != 'N/A':
-                try:
-                    final_lt_minutes = float(final_lt_days) * 24 * 60  # Convert days to minutes
-                except (ValueError, TypeError):
-                    pass
-        else:
-            # Normal & Serious: langsung ambil minutes
-            final_lt_min = result.get('final_reply_lead_time_minutes')
-            if final_lt_min is not None and final_lt_min != 'N/A':
-                try:
-                    final_lt_minutes = float(final_lt_min)
-                except (ValueError, TypeError):
-                    pass
-        
-        if final_lt_minutes is not None and final_lt_minutes > 0:
-            final_reply_data.append({
-                'Inquiry Type': result['final_issue_type'].upper(),
-                'Lead Time (minutes)': final_lt_minutes,
-                'Lead Time (hours)': final_lt_minutes / 60,
-                'Lead Time (days)': final_lt_minutes / 1440,
-                'Formatted Lead Time': format_lead_time(final_lt_minutes)
-            })
-    
-    if final_reply_data:
-        df_final = pd.DataFrame(final_reply_data)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Box plot final reply - pilih unit yang paling appropriate
-            max_lead_time = df_final['Lead Time (days)'].max()
-            if max_lead_time > 1:
-                y_column = 'Lead Time (days)'
-                y_title = 'Lead Time (days)'
-                title_suffix = 'Days'
-            else:
-                y_column = 'Lead Time (hours)'
-                y_title = 'Lead Time (hours)'
-                title_suffix = 'Hours'
-            
-            fig_final_box = px.box(
-                df_final, 
-                x='Inquiry Type', 
-                y=y_column,
-                title=f'Final Reply Lead Time Distribution ({title_suffix})',
-                color='Inquiry Type',
-                color_discrete_map={
-                    'NORMAL': '#2E86AB',
-                    'SERIOUS': '#A23B72',
-                    'COMPLAINT': '#F18F01'
-                }
-            )
-            fig_final_box.update_layout(yaxis_title=y_title)
-            st.plotly_chart(fig_final_box, use_container_width=True)
-        
-        with col2:
-            # Statistics untuk final reply dengan format fleksibel
-            st.markdown("#### 📈 Final Reply Statistics")
-            final_stats_data = []
-            for issue_type in df_final['Inquiry Type'].unique():
-                issue_data = df_final[df_final['Inquiry Type'] == issue_type]['Lead Time (minutes)']
-                if len(issue_data) > 0:
-                    final_stats_data.append({
-                        'Inquiry Type': issue_type,
-                        'Count': len(issue_data),
-                        'Average': format_lead_time(np.mean(issue_data)),
-                        'Median': format_lead_time(np.median(issue_data)),
-                        'Min': format_lead_time(np.min(issue_data)),
-                        'Max': format_lead_time(np.max(issue_data))
-                    })
-            
-            if final_stats_data:
-                df_final_stats = pd.DataFrame(final_stats_data)
-                st.dataframe(df_final_stats, use_container_width=True)
-        
-        # Additional insight untuk final reply
-        st.markdown("#### 💡 Final Reply Insights")
-        total_final_cases = len(final_reply_data)
-        if total_final_cases > 0:
-            st.write(f"**Total final reply cases analyzed:** {total_final_cases}")
-            
-            # Cari Inquiry Type dengan lead time terpanjang
-            max_lead_time_idx = df_final['Lead Time (minutes)'].idxmax()
-            max_case = df_final.loc[max_lead_time_idx]
-            st.write(f"**Longest resolution:** {max_case['Inquiry Type']} case - {max_case['Formatted Lead Time']}")
-            
-            # Cari Inquiry Type dengan lead time terpendek
-            min_lead_time_idx = df_final['Lead Time (minutes)'].idxmin()
-            min_case = df_final.loc[min_lead_time_idx]
-            st.write(f"**Fastest resolution:** {min_case['Inquiry Type']} case - {min_case['Formatted Lead Time']}")
-            
-            # Rata-rata overall
-            overall_avg = format_lead_time(df_final['Lead Time (minutes)'].mean())
-            st.write(f"**Overall average resolution time:** {overall_avg}")
-    else:
-        st.info("No final reply lead time data available")
-
-    # 5. COMPARISON CHART (SEMUA Inquiry Type)
-    st.markdown("### 📊 Lead Time Comparison - All Inquiry Types")
-    
-    # Prepare data untuk comparison chart
-    comparison_data = []
-    for issue_type, data in lead_time_by_type.items():
-        if data['first_lead_times']:
-            try:
-                first_avg = np.mean(data['first_lead_times'])
-                comparison_data.append({
-                    'Inquiry Type': issue_type.upper(),
-                    'Reply Type': 'First Reply',
-                    'Average Lead Time (minutes)': first_avg,
-                    'Formatted Time': format_lead_time(first_avg)
-                })
-            except:
-                pass
-        
-        if data['final_lead_times_minutes']:
-            try:
-                final_avg = np.mean(data['final_lead_times_minutes'])
-                comparison_data.append({
-                    'Inquiry Type': issue_type.upper(),
-                    'Reply Type': 'Final Reply',
-                    'Average Lead Time (minutes)': final_avg,
-                    'Formatted Time': format_lead_time(final_avg)
-                })
-            except:
-                pass
-    
-    if comparison_data:
-        df_comparison = pd.DataFrame(comparison_data)
-        
-        # Pilih unit yang paling appropriate untuk chart
-        max_lead_time = df_comparison['Average Lead Time (minutes)'].max()
-        if max_lead_time > 1440:  # > 1 day
-            df_comparison['Average Lead Time'] = df_comparison['Average Lead Time (minutes)'] / 1440
-            y_title = 'Average Lead Time (days)'
-        elif max_lead_time > 60:  # > 1 hour
-            df_comparison['Average Lead Time'] = df_comparison['Average Lead Time (minutes)'] / 60
-            y_title = 'Average Lead Time (hours)'
-        else:
-            df_comparison['Average Lead Time'] = df_comparison['Average Lead Time (minutes)']
-            y_title = 'Average Lead Time (minutes)'
-        
-        fig_comparison = px.bar(
-            df_comparison, 
-            x='Inquiry Type', 
-            y='Average Lead Time',
-            color='Reply Type',
-            title=f'Average Lead Time Comparison by Inquiry Type',
-            labels={'Average Lead Time': y_title, 'Inquiry Type': 'Inquiry Type'},
-            barmode='group',
-            color_discrete_map={
-                'First Reply': '#2E86AB',
-                'Final Reply': '#A23B72'
-            }
-        )
-        
-        # Format tooltip untuk menunjukkan formatted time
-        fig_comparison.update_traces(
-            hovertemplate='<b>%{x}</b><br>%{data.name}<br>Average: %{customdata}<extra></extra>',
-            customdata=df_comparison['Formatted Time']
-        )
-        
-        st.plotly_chart(fig_comparison, use_container_width=True)
-    else:
-        st.info("No data available for comparison chart")
-                    
-def display_issue_types_tab(results, stats):
-    """Display Inquiry Types analysis"""
-    st.markdown("## 🎯 Inquiry Types Analysis")
-    
-    successful = [r for r in results if r['status'] == 'success']
-    
-    if successful:
-        # Summary by Inquiry Type
-        st.markdown("### 📊 Summary by Inquiry Type")
-        
-        issue_summary = {}
-        for result in successful:
-            issue_type = result['final_issue_type']
-            if issue_type not in issue_summary:
-                issue_summary[issue_type] = {
-                    'count': 0,
-                    'avg_quality': [],
-                    'first_reply_found': 0,
-                    'final_reply_found': 0
-                }
-            
-            issue_summary[issue_type]['count'] += 1
-            issue_summary[issue_type]['avg_quality'].append(result['quality_score'])
-            if result['first_reply_found']:
-                issue_summary[issue_type]['first_reply_found'] += 1
-            if result['final_reply_found']:
-                issue_summary[issue_type]['final_reply_found'] += 1
-        
-        # Display summary
-        summary_data = []
-        for issue_type, data in issue_summary.items():
-            avg_quality = np.mean(data['avg_quality'])
-            first_reply_rate = (data['first_reply_found'] / data['count']) * 100
-            final_reply_rate = (data['final_reply_found'] / data['count']) * 100
-            
-            summary_data.append({
-                'Inquiry Type': issue_type.upper(),
-                'Count': data['count'],
-                'Avg Quality Score': f"{avg_quality:.1f}",
-                'First Reply Rate': f"{first_reply_rate:.1f}%",
-                'Final Reply Rate': f"{final_reply_rate:.1f}%"
-            })
-        
-        df_summary = pd.DataFrame(summary_data)
-        st.dataframe(df_summary, use_container_width=True)
-        
-        # Detailed view
-        st.markdown("### 📋 Detailed Inquiries View")
-        
-        display_data = []
-        for result in successful:
-            special_notes = []
-            if result.get('customer_leave'):
-                special_notes.append("🚶 Customer Leave")
-            if result['final_issue_type'] == 'complaint':
-                special_notes.append("📋 From Complaint System")
-            
-            display_data.append({
-                'Ticket ID': result['ticket_id'],
-                'Inquiry Type': result['final_issue_type'].upper(),
-                'Main Question': result['main_question'][:80] + '...',
-                'First Reply': '✅' if result['first_reply_found'] else '❌',
-                'Final Reply': '✅' if result['final_reply_found'] else '❌',
-                'First LT': result.get('first_reply_lead_time_minutes', 'N/A'),
-                'Final LT': _format_lead_time_for_table(result),
-                'Performance': result['performance_rating'].upper(),
-                'Special Notes': ', '.join(special_notes) if special_notes else '-'
-            })
-        
-        df_display = pd.DataFrame(display_data)
-        st.dataframe(df_display, use_container_width=True)
-        
-        # Detailed view for selected ticket
-        st.markdown("### 🔍 Detailed Ticket View")
-        ticket_options = [f"{r['ticket_id']} - {r['final_issue_type'].upper()} - {r['main_question'][:50]}..." for r in successful]
-        selected_ticket = st.selectbox("Select ticket for details:", ticket_options, key="ticket_selector")
-        
-        if selected_ticket:
-            ticket_id = selected_ticket.split(' - ')[0]
-            selected_result = next((r for r in successful if r['ticket_id'] == ticket_id), None)
-            
-            if selected_result:
-                display_enhanced_ticket_details(selected_result)
-    else:
-        st.info("No successful analyses to display")
-        
-def display_enhanced_ticket_details(result):
-    """Display detailed information for a single ticket dengan enhanced info"""
-    
-    # Main Question
-    st.markdown("### 📝 Main Question")
-    st.markdown(f'<div class="message-box"><strong>Question:</strong> {result["main_question"]}</div>', unsafe_allow_html=True)
-    
-    # Inquiry Type dengan color coding
-    issue_type = result['final_issue_type']
-    issue_color = {
-        'normal': '#28a745',
-        'serious': '#dc3545', 
-        'complaint': '#ffc107'
-    }.get(issue_type, '#6c757d')
-    
-    st.markdown(f"""
-    <div style="background-color: {issue_color}; color: white; padding: 10px; border-radius: 5px; margin: 10px 0;">
-        <strong>Inquiry Type:</strong> {issue_type.upper()}
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Special Notes
-    special_notes = []
-    if result.get('customer_leave'):
-        special_notes.append("🚶 **Customer Leave**: Detected by Ticket Automation")
-    
-    if special_notes:
-        st.markdown("#### 📌 Special Notes")
-        for note in special_notes:
-            st.markdown(f'<div class="special-case">{note}</div>', unsafe_allow_html=True)
-    
-    # Performance Metrics
-    st.markdown("#### 📊 Performance Metrics")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        performance_color = {
-            'excellent': '#28a745',
-            'good': '#007bff', 
-            'fair': '#ffc107',
-            'poor': '#dc3545'
-        }.get(result['performance_rating'], '#6c757d')
-        
-        st.markdown(f"""
-        <div style="background-color: {performance_color}; color: white; padding: 15px; border-radius: 10px; text-align: center;">
-            <h3 style="margin: 0; font-size: 1.2rem;">Performance</h3>
-            <h1 style="margin: 10px 0; font-size: 2.5rem;">{result['performance_rating'].upper()}</h1>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        quality_color = "#28a745" if result['quality_score'] >= 4 else "#ffc107" if result['quality_score'] >= 2 else "#dc3545"
-        st.markdown(f"""
-        <div style="background-color: {quality_color}; color: white; padding: 15px; border-radius: 10px; text-align: center;">
-            <h3 style="margin: 0; font-size: 1.2rem;">Quality Score</h3>
-            <h1 style="margin: 10px 0; font-size: 2.5rem;">{result['quality_score']}/6</h1>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.metric("Total Messages", result['total_messages'])
-    
-    with col4:
-        answer_rate = (result['answered_pairs'] / result['total_qa_pairs']) * 100 if result['total_qa_pairs'] > 0 else 0
-        st.metric("Answer Rate", f"{answer_rate:.1f}%")
-    
-    # Raw Data Access (if available) - INI YANG DIPULIHKAN
-    st.markdown("#### 🔧 Raw Analysis Data")
-    
-    if '_raw_qa_pairs' in result:
-        with st.expander("📋 Show Raw Q-A Pairs Conversation", expanded=False):
-            qa_data = []
-            for i, pair in enumerate(result['_raw_qa_pairs']):
-                qa_data.append({
-                    'Pair': i + 1,
-                    'Question': pair.get('question', ''),
-                    'Question Time': pair.get('question_time', 'N/A'),
-                    'Answered': '✅' if pair.get('is_answered') else '❌',
-                    'Answer': pair.get('answer', '')[:200] + '...' if pair.get('answer') and len(pair.get('answer', '')) > 200 else pair.get('answer', 'No Answer'),
-                    'Answer Time': pair.get('answer_time', 'N/A'),
-                    'Lead Time (min)': pair.get('lead_time_minutes', 'N/A')
-                })
-            
-            if qa_data:
-                df_qa = pd.DataFrame(qa_data)
-                st.dataframe(df_qa, use_container_width=True)
-                
-                # Summary
-                total_pairs = len(result['_raw_qa_pairs'])
-                answered_pairs = sum(1 for p in result['_raw_qa_pairs'] if p.get('is_answered'))
-                st.metric("Total Q-A Pairs", total_pairs)
-                st.metric("Answered Pairs", answered_pairs)
-                st.metric("Answer Rate", f"{(answered_pairs/total_pairs)*100:.1f}%" if total_pairs > 0 else "0%")
-            else:
-                st.info("No Q-A pairs data available")
-    else:
-        st.info("No raw Q-A pairs data available for this ticket")
-    
-    if '_raw_reply_analysis' in result:
-        with st.expander("🔍 Show Reply Analysis Details", expanded=False):
-            reply_analysis = result['_raw_reply_analysis']
-            
-            # Tampilkan dalam format yang lebih readable
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("**Basic Info**")
-                st.write(f"**Inquiry Type:** {reply_analysis.get('issue_type', 'N/A')}")
-                st.write(f"**Customer Leave:** {reply_analysis.get('customer_leave', False)}")
-                st.write(f"**Requirement Compliant:** {reply_analysis.get('requirement_compliant', False)}")
-                st.write(f"**Quality Score:** {reply_analysis.get('quality_score', 'N/A')}")
-            
-            with col2:
-                st.markdown("**Reply Status**")
-                st.write(f"**First Reply Found:** {reply_analysis.get('first_reply') is not None}")
-                st.write(f"**Final Reply Found:** {reply_analysis.get('final_reply') is not None}")
-                st.write(f"**First Reply Time:** {reply_analysis.get('first_reply_time', 'N/A')}")
-                st.write(f"**Final Reply Time:** {reply_analysis.get('final_reply_time', 'N/A')}")
-            
-            # First Reply Details
-            if reply_analysis.get('first_reply'):
-                st.markdown("**📞 First Reply Details**")
-                first_reply = reply_analysis['first_reply']
-                col1, col2 = st.columns([2, 1])
-                
-                with col1:
-                    st.text_area("Message", first_reply.get('message', ''), height=100, disabled=True)
-                
-                with col2:
-                    st.write(f"**Lead Time:** {first_reply.get('lead_time_minutes', 'N/A')} min")
-                    st.write(f"**Note:** {first_reply.get('note', 'N/A')}")
-                    st.write(f"**Time:** {first_reply.get('timestamp', 'N/A')}")
-            
-            # Final Reply Details
-            if reply_analysis.get('final_reply'):
-                st.markdown("**✅ Final Reply Details**")
-                final_reply = reply_analysis['final_reply']
-                col1, col2 = st.columns([2, 1])
-                
-                with col1:
-                    st.text_area("Message", final_reply.get('message', ''), height=100, disabled=True)
-                
-                with col2:
-                    if final_reply.get('lead_time_days'):
-                        st.write(f"**Lead Time:** {final_reply.get('lead_time_days')} days")
-                    else:
-                        st.write(f"**Lead Time:** {final_reply.get('lead_time_minutes', 'N/A')} min")
-                    st.write(f"**Note:** {final_reply.get('note', 'N/A')}")
-                    st.write(f"**Time:** {final_reply.get('timestamp', 'N/A')}")
-            
-            # Main Issue Detection
-            if reply_analysis.get('main_issue'):
-                st.markdown("**🎯 Main Issue Detection**")
-                main_issue = reply_analysis['main_issue']
-                st.write(f"**Question:** {main_issue.get('question', 'N/A')}")
-                st.write(f"**Detection Score:** {main_issue.get('detection_score', 'N/A')}")
-                st.write(f"**Detection Reason:** {main_issue.get('detection_reason', 'N/A')}")
-                st.write(f"**Question Time:** {main_issue.get('question_time', 'N/A')}")
-            
-            # Tampilkan JSON mentah hanya jika diminta
-            if st.checkbox("Show Raw JSON Data (Advanced)"):
-                st.json(reply_analysis)
-    else:
-        st.info("No detailed reply analysis data available")
-    
-    # Ticket Metadata
-    st.markdown("#### 🏷️ Ticket Metadata")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.write(f"**Ticket ID:** {result.get('ticket_id', 'N/A')}")
-        st.write(f"**Analysis Time:** {result.get('analysis_timestamp', 'N/A')}")
-    
-    with col2:
-        st.write(f"**First Reply Found:** {result['first_reply_found']}")
-        st.write(f"**Final Reply Found:** {result['final_reply_found']}")
-    
-    with col3:
-        st.write(f"**Customer Leave:** {result.get('customer_leave', False)}")
-        st.write(f"**Total QA Pairs:** {result.get('total_qa_pairs', 0)}")
-        
 def _format_lead_time_for_table(result):
-    """Format lead time untuk tabel dalam dd:hh:mm:ss"""
-    if result['final_issue_type'] == 'complaint' and result.get('final_reply_lead_time_days'):
-        try:
-            days = float(result['final_reply_lead_time_days'])
-            minutes = days * 24 * 60
-            return format_lead_time(minutes)
-        except:
-            return "N/A"
-    elif result.get('final_reply_lead_time_minutes'):
-        try:
-            minutes = float(result['final_reply_lead_time_minutes'])
-            return format_lead_time(minutes)
-        except:
-            return "N/A"
-    else:
-        return "N/A"
+    """Format final lead time untuk tabel dalam dd:hh:mm:ss"""
+    minutes = _final_lead_time_minutes(result)
+    return format_lead_time(minutes) if minutes is not None else "N/A"
 
+
+def _format_first_lead_time_for_table(result):
+    minutes = _first_lead_time_minutes(result)
+    return format_lead_time(minutes) if minutes is not None else "N/A"
+
+
+def _empty(message):
+    st.info(message, icon=":material/info:")
+
+
+# ------------------------------------------------------------ overview
+def display_professional_overview_tab(results, stats):
+    successful = [r for r in results if r['status'] == 'success']
+    if not successful:
+        _empty("No tickets could be analyzed. See the Data quality tab for the reasons.")
+        return
+    lt = calculate_lead_time_stats(results)
+    eff = stats.get('reply_effectiveness', {})
+    n = len(successful)
+    leave = eff.get('customer_leave_cases', 0)
+
+    c1, c2, c3, c4 = st.container(key="kpis_overview").columns(4)
+    c1.metric("Tickets analyzed", f"{n:,}", help=f"{stats.get('total_tickets', n):,} tickets in scope; "
+                                                 f"{stats.get('failed_analysis', 0)} could not be analyzed.")
+    c2.metric("Avg first reply", format_lead_time(lt['first_avg_minutes']),
+              help=f"dd:hh:mm:ss · {lt['first_samples']} tickets with a first reply")
+    c3.metric("Avg final reply", format_lead_time(lt['final_avg_minutes']),
+              help=f"dd:hh:mm:ss · {lt['final_samples']} tickets with a final reply")
+    c4.metric("Customer left", f"{leave / n * 100:.1f}%", help=f"{leave} tickets ended by Ticket Automation "
+                                                                 "because the customer stopped responding")
+
+    col1, col2 = st.columns(2, gap="medium")
+    with col1:
+        dist = stats.get('issue_type_distribution') or {}
+        if dist:
+            df = pd.DataFrame({'Inquiry type': [k.upper() for k in dist], 'Tickets': list(dist.values())})
+            df['Share'] = (df['Tickets'] / df['Tickets'].sum() * 100).round(1)
+            order = [t for t in ISSUE_ORDER if t in set(df['Inquiry type'])] + \
+                    [t for t in df['Inquiry type'] if t not in ISSUE_ORDER]
+            fig = px.bar(df, x='Tickets', y='Inquiry type', orientation='h', color='Inquiry type',
+                         color_discrete_map=ISSUE_COLORS, title='Inquiry type mix',
+                         text=df.apply(lambda r: f"{r['Tickets']} ({r['Share']}%)", axis=1),
+                         category_orders={'Inquiry type': order})
+            fig.update_layout(showlegend=False, yaxis_title=None,
+                              xaxis_range=[0, df['Tickets'].max() * 1.35])
+            fig.update_traces(textposition='outside', cliponaxis=False)
+            show_chart(fig, 280)
+        else:
+            _empty("No inquiry type data available.")
+    with col2:
+        perf = stats.get('performance_distribution') or {}
+        if perf:
+            df = pd.DataFrame({'Rating': [k.upper() for k in perf], 'Tickets': list(perf.values())})
+            fig = px.bar(df, x='Rating', y='Tickets', color='Rating', color_discrete_map=PERF_COLORS,
+                         title='Performance rating', text='Tickets',
+                         category_orders={'Rating': [p for p in PERF_ORDER if p in set(df['Rating'])]})
+            fig.update_layout(showlegend=False, xaxis_title=None,
+                              yaxis_range=[0, df['Tickets'].max() * 1.18])
+            fig.update_traces(textposition='outside', cliponaxis=False)
+            show_chart(fig, 280)
+        else:
+            _empty("No performance data available.")
+
+    st.markdown("#### Reply coverage")
+    c1, c2, c3 = st.container(key="kpis_coverage").columns(3)
+    c1.metric("First reply found", f"{eff.get('first_reply_found_rate', 0) * 100:.1f}%",
+              help="Share of analyzed tickets where a first reply was identified")
+    c2.metric("Final reply found", f"{eff.get('final_reply_found_rate', 0) * 100:.1f}%",
+              help="Share of analyzed tickets where a final (solution) reply was identified")
+    c3.metric("Missing required reply", len(_missing_required_replies(successful)),
+              help="Serious/complaint tickets without a first reply, or normal tickets without a final "
+                   "reply where the customer did not leave")
+
+
+# ------------------------------------------------------------ lead times
+def display_enhanced_lead_time_tab(results, stats):
+    successful = [r for r in results if r['status'] == 'success']
+    if not successful:
+        _empty("No analyzed tickets.")
+        return
+    lt = calculate_lead_time_stats(results)
+    c1, c2, c3, c4 = st.container(key="kpis_lead").columns(4)
+    c1.metric("First reply average", format_lead_time(lt['first_avg_minutes']))
+    c2.metric("Final reply average", format_lead_time(lt['final_avg_minutes']))
+    c3.metric("First replies measured", lt['first_samples'])
+    c4.metric("Final replies measured", lt['final_samples'])
+    st.caption("Lead times use dd:hh:mm:ss (days:hours:minutes:seconds). Complaint final replies use "
+               "Lead Time (Solved) from the complaint list.")
+
+    rows = []
+    for r in successful:
+        rows.append({'Inquiry Type': r['final_issue_type'].upper(),
+                     'first': _first_lead_time_minutes(r), 'final': _final_lead_time_minutes(r)})
+    df = pd.DataFrame(rows)
+
+    st.markdown("#### By inquiry type")
+    breakdown = []
+    for issue_type in [t for t in ISSUE_ORDER if t in set(df['Inquiry Type'])] + \
+            [t for t in df['Inquiry Type'].unique() if t not in ISSUE_ORDER]:
+        sub = df[df['Inquiry Type'] == issue_type]
+        first, final = sub['first'].dropna(), sub['final'].dropna()
+        breakdown.append({
+            'Inquiry Type': issue_type,
+            'First Reply Avg': format_lead_time(first.mean()) if len(first) else 'N/A',
+            'First Reply Median': format_lead_time(first.median()) if len(first) else 'N/A',
+            'Final Reply Avg': format_lead_time(final.mean()) if len(final) else 'N/A',
+            'Final Reply Median': format_lead_time(final.median()) if len(final) else 'N/A',
+            'Count of First Reply': len(first),
+            'Count of Final Reply': len(final),
+        })
+    st.dataframe(pd.DataFrame(breakdown), use_container_width=True, hide_index=True)
+
+    col1, col2 = st.columns(2, gap="medium")
+    with col1:
+        first_df = df.dropna(subset=['first'])
+        if not first_df.empty:
+            fig = px.box(first_df, x='Inquiry Type', y='first', color='Inquiry Type',
+                         color_discrete_map=ISSUE_COLORS, title='First reply distribution (minutes)',
+                         category_orders={'Inquiry Type': ISSUE_ORDER})
+            fig.update_layout(showlegend=False, yaxis_title='Minutes', xaxis_title=None)
+            show_chart(fig)
+        else:
+            _empty("No first reply lead times measured.")
+    with col2:
+        final_df = df.dropna(subset=['final']).copy()
+        if not final_df.empty:
+            final_df['value'] = final_df['final'] / 60
+            # complaint lead times are days while chat replies are minutes: use a log axis so both stay readable
+            wide_range = final_df['final'].max() / max(final_df['final'].min(), 1e-9) > 100
+            fig = px.box(final_df, x='Inquiry Type', y='value', color='Inquiry Type', log_y=wide_range,
+                         color_discrete_map=ISSUE_COLORS,
+                         title=f'Final reply distribution (hours{", log scale" if wide_range else ""})',
+                         category_orders={'Inquiry Type': ISSUE_ORDER})
+            unit = 'Hours'
+            fig.update_layout(showlegend=False, yaxis_title=unit, xaxis_title=None)
+            show_chart(fig)
+        else:
+            _empty("No final reply lead times measured.")
+
+    final_only = df.dropna(subset=['final'])
+    if not final_only.empty:
+        longest = final_only.loc[final_only['final'].idxmax()]
+        fastest = final_only.loc[final_only['final'].idxmin()]
+        st.markdown(
+            f"Longest final reply: **{longest['Inquiry Type']}**, {format_lead_time(longest['final'])}  \n"
+            f"Fastest final reply: **{fastest['Inquiry Type']}**, {format_lead_time(fastest['final'])}")
+
+
+# ------------------------------------------------------------ inquiry types
+def display_issue_types_tab(results, stats):
+    successful = [r for r in results if r['status'] == 'success']
+    if not successful:
+        _empty("No analyzed tickets.")
+        return
+    summary = {}
+    for r in successful:
+        s = summary.setdefault(r['final_issue_type'].upper(), {'count': 0, 'quality': [], 'first': 0,
+                                                                'final': 0, 'leave': 0})
+        s['count'] += 1
+        s['quality'].append(r['quality_score'])
+        s['first'] += bool(r['first_reply_found'])
+        s['final'] += bool(r['final_reply_found'])
+        s['leave'] += bool(r.get('customer_leave'))
+    rows = []
+    for issue_type in [t for t in ISSUE_ORDER if t in summary] + [t for t in summary if t not in ISSUE_ORDER]:
+        s = summary[issue_type]
+        rows.append({
+            'Inquiry Type': issue_type,
+            'Tickets': s['count'],
+            'Share': f"{s['count'] / len(successful) * 100:.1f}%",
+            'Avg Quality Score': round(float(np.mean(s['quality'])), 1),
+            'First Reply Rate': f"{s['first'] / s['count'] * 100:.1f}%",
+            'Final Reply Rate': f"{s['final'] / s['count'] * 100:.1f}%",
+            'Customer Left': s['leave'],
+        })
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True,
+                 column_config={'Avg Quality Score': st.column_config.NumberColumn(format="%.1f / 6")})
+    st.caption("Normal: general questions. Serious: issues that need follow-up by another team. "
+               "Complaint: tickets matched to the complaint list by phone number.")
+
+
+# ------------------------------------------------------------ performance
 def display_performance_tab(results, stats):
-    """Display performance analysis"""
-    st.markdown("## 📊 Performance Analysis")
-    
     successful = [r for r in results if r['status'] == 'success']
-    
-    if successful:
-        # Performance by Inquiry Type
-        perf_data = []
-        for result in successful:
-            perf_data.append({
-                'issue_type': result['final_issue_type'],
-                'performance': result['performance_rating'],
-                'quality_score': result['quality_score']
-            })
-        
-        df_perf = pd.DataFrame(perf_data)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Performance by Inquiry Type
-            perf_pivot = pd.crosstab(
-                df_perf['issue_type'], 
-                df_perf['performance']
-            ).reset_index()
-            
-            if len(perf_pivot) > 1:
-                fig_stacked = px.bar(
-                    perf_pivot, 
-                    x='issue_type',
-                    y=perf_pivot.columns[1:].tolist(),
-                    title='Performance Rating by Inquiry Type',
-                    labels={'value': 'Count', 'issue_type': 'Inquiry Type'},
-                    barmode='stack'
-                )
-                st.plotly_chart(fig_stacked, use_container_width=True)
-        
-        with col2:
-            # Quality Score Distribution
-            fig_quality = px.histogram(
-                df_perf, x='quality_score',
-                title='Quality Score Distribution',
-                labels={'x': 'Quality Score', 'y': 'Count'},
-                nbins=6,
-                color_discrete_sequence=['#F18F01']
-            )
-            st.plotly_chart(fig_quality, use_container_width=True)
-        
-        # Performance metrics table
-        st.markdown("### 📈 Detailed Performance Metrics")
-        perf_metrics = []
-        for result in successful:
-            special_notes = []
-            if result.get('customer_leave'):
-                special_notes.append("Customer Leave")
-            if result['final_issue_type'] == 'complaint':
-                special_notes.append("Complaint")
-            
-            perf_metrics.append({
-                'Ticket ID': result['ticket_id'],
-                'Inquiry Type': result['final_issue_type'],
-                'Performance': result['performance_rating'].upper(),
-                'Quality Score': result['quality_score'],
-                'First Reply LT': result.get('first_reply_lead_time_minutes', 'N/A'),
-                'Final Reply LT': _format_lead_time_for_table(result),
-                'First Reply': '✅' if result['first_reply_found'] else '❌',
-                'Final Reply': '✅' if result['final_reply_found'] else '❌',
-                'Special Notes': ', '.join(special_notes) if special_notes else '-'
-            })
-        
-        df_perf_metrics = pd.DataFrame(perf_metrics)
-        st.dataframe(df_perf_metrics, use_container_width=True)
+    if not successful:
+        _empty("No analyzed tickets.")
+        return
+    df = pd.DataFrame([{'Inquiry Type': r['final_issue_type'].upper(),
+                        'Rating': r['performance_rating'].upper(),
+                        'Quality Score': r['quality_score']} for r in successful])
+    col1, col2 = st.columns(2, gap="medium")
+    with col1:
+        counts = df.groupby(['Inquiry Type', 'Rating']).size().reset_index(name='Tickets')
+        fig = px.bar(counts, x='Inquiry Type', y='Tickets', color='Rating', barmode='stack',
+                     color_discrete_map=PERF_COLORS, title='Rating by inquiry type',
+                     category_orders={'Rating': PERF_ORDER, 'Inquiry Type': ISSUE_ORDER})
+        fig.update_layout(xaxis_title=None)
+        show_chart(fig)
+    with col2:
+        q = df['Quality Score'].value_counts().reindex(range(0, 7), fill_value=0).reset_index()
+        q.columns = ['Quality Score', 'Tickets']
+        fig = px.bar(q, x='Quality Score', y='Tickets', title='Quality score (0–6)', text='Tickets',
+                     color_discrete_sequence=['#4C78A8'])
+        fig.update_layout(xaxis=dict(dtick=1), yaxis_range=[0, max(q['Tickets'].max(), 1) * 1.18])
+        fig.update_traces(textposition='outside', cliponaxis=False)
+        show_chart(fig)
+    st.caption("Quality score: +2 first reply found, +2 final reply found, +1 customer stayed, "
+               "+1 reply requirements met.")
 
-def display_enhanced_special_cases_tab(results, stats):
-    """Display enhanced special cases analysis"""
-    st.markdown("## 🚨 Special Cases Analysis")
-    
+
+# ------------------------------------------------------------ tickets
+def display_ticket_explorer_tab(results):
     successful = [r for r in results if r['status'] == 'success']
-    
-    # Extract special cases
-    customer_leave_cases = [r for r in successful if r.get('customer_leave')]
-    
-    # SUMMARY CARDS
-    st.markdown("### 📊 Special Cases Summary")
-    st.metric("Customer Leave Cases", len(customer_leave_cases))
-    
-    # CUSTOMER LEAVE CASES
-    st.markdown("---")
-    st.markdown("### 🚶 Customer Leave Cases")
-    
-    if customer_leave_cases:
-        st.info(f"**{len(customer_leave_cases)} conversations** where customer left (detected by Ticket Automation)")
-        
-        with st.expander("View Customer Leave Details", expanded=True):
-            leave_data = []
-            for result in customer_leave_cases:
-                leave_data.append({
-                    'Ticket ID': result['ticket_id'],
-                    'Inquiry Type': result['final_issue_type'].upper(),
-                    'Main Question': result['main_question'][:60] + '...',
-                    'Final Reply Status': '✅ Found' if result['final_reply_found'] else '❌ Missing',
-                    'Performance': result['performance_rating'].upper()
-                })
-            
-            df_leave = pd.DataFrame(leave_data)
-            st.dataframe(df_leave, use_container_width=True)
-    else:
-        st.success("✅ No customer leave cases detected")
+    if not successful:
+        _empty("No analyzed tickets.")
+        return
+    c1, c2, c3 = st.columns([2, 1.3, 1.3])
+    query = c1.text_input("Search", placeholder="Ticket number or words in the question", key="tk_q")
+    types = c2.multiselect("Inquiry type", ISSUE_ORDER, key="tk_types")
+    ratings = c3.multiselect("Rating", PERF_ORDER, key="tk_ratings")
+    left_only = st.checkbox("Only tickets where the customer left", key="tk_left")
 
-def display_raw_data_tab(results):
-    """Display raw data tab"""
-    st.markdown("## 📋 All Analyzed Data")
-    
-    successful = [r for r in results if r['status'] == 'success']
-    
-    if successful:
-        st.info(f"Showing {len(successful)} successful analyses")
-        
-        # Tampilkan data lengkap
-        raw_data = []
-        for result in successful:
-            raw_data.append({
-                'Ticket ID': result['ticket_id'],
-                'Main Question': result['main_question'],
-                'Inquiry Type': result['final_issue_type'],
-                'First Reply Found': result['first_reply_found'],
-                'First Reply Message': result.get('first_reply_message', '')[:100] + '...' if result.get('first_reply_message') else 'Not found',
-                'First Reply LT': result.get('first_reply_lead_time_minutes'),
-                'Final Reply Found': result['final_reply_found'],
-                'Final Reply Message': result.get('final_reply_message', '')[:100] + '...' if result.get('final_reply_message') else 'Not found',
-                'Final Reply LT': _format_lead_time_for_table(result),
-                'Performance': result['performance_rating'],
-                'Quality Score': result['quality_score'],
-                'Customer Leave': result['customer_leave'],
-                'Total Messages': result['total_messages'],
-                'Total QA Pairs': result['total_qa_pairs']
-            })
-        
-        df_raw = pd.DataFrame(raw_data)
-        st.dataframe(df_raw, use_container_width=True)
-        
-    else:
-        st.info("No successful analyses to display")
+    q = query.strip().lower()
+    filtered = [r for r in successful
+                if (not q or q in str(r['ticket_id']).lower() or q in str(r.get('main_question', '')).lower())
+                and (not types or r['final_issue_type'].upper() in types)
+                and (not ratings or r['performance_rating'].upper() in ratings)
+                and (not left_only or r.get('customer_leave'))]
+    st.caption(f"{len(filtered):,} of {len(successful):,} tickets")
+    if not filtered:
+        _empty("No tickets match these filters.")
+        return
 
-def display_debug_tab(results, stats):
-    """Display debug information"""
-    st.markdown("## 🐛 Debug Information")
-    
+    # most decision-relevant columns first so they stay visible on narrow screens
+    table = pd.DataFrame([{
+        'Ticket': str(r['ticket_id']),
+        'Inquiry Type': r['final_issue_type'].upper(),
+        'Rating': r['performance_rating'].upper(),
+        'Final LT': _format_lead_time_for_table(r),
+        'Main Question': truncate(r.get('main_question'), 90),
+        'First LT': _format_first_lead_time_for_table(r),
+        'First Reply': bool(r['first_reply_found']),
+        'Final Reply': bool(r['final_reply_found']),
+        'Quality': r['quality_score'],
+        'Customer Left': bool(r.get('customer_leave')),
+    } for r in filtered])
+    st.dataframe(table, use_container_width=True, hide_index=True, height=min(38 + 35 * len(table), 420),
+                 column_config={'Main Question': st.column_config.TextColumn(width="large"),
+                                'Quality': st.column_config.NumberColumn(format="%d / 6")})
+
+    st.markdown("#### Ticket details")
+    by_id = {str(r['ticket_id']): r for r in filtered}
+    selected = st.selectbox("Ticket", list(by_id.keys()), key="ticket_selector",
+                            format_func=lambda t: f"{t} · {by_id[t]['final_issue_type'].upper()} · "
+                                                  f"{truncate(by_id[t].get('main_question'), 50)}")
+    if selected:
+        display_enhanced_ticket_details(by_id[selected])
+
+
+def _badge(text, color):
+    return f'<span class="lca-badge" style="background:{color}">{esc(text)}</span>'
+
+
+def display_enhanced_ticket_details(result):
+    """Detail satu tiket."""
+    issue = result['final_issue_type'].upper()
+    rating = result['performance_rating'].upper()
+    badges = _badge(issue, ISSUE_COLORS.get(issue, '#6B7280')) + _badge(rating, PERF_COLORS.get(rating, '#6B7280'))
+    if result.get('customer_leave'):
+        badges += _badge("CUSTOMER LEFT", '#6B7280')
+    st.markdown(badges, unsafe_allow_html=True)
+
+    st.markdown("**Main question**")
+    st.markdown(f'<div class="lca-quote">{esc(result.get("main_question"))}</div>', unsafe_allow_html=True)
+
+    answer_rate = (result['answered_pairs'] / result['total_qa_pairs']) * 100 if result['total_qa_pairs'] > 0 else 0
+    c1, c2, c3, c4 = st.container(key="kpis_ticket").columns(4)
+    c1.metric("Quality score", f"{result['quality_score']}/6")
+    c2.metric("Messages", result['total_messages'])
+    c3.metric("Q&A pairs answered", f"{result['answered_pairs']}/{result['total_qa_pairs']}",
+              help=f"Answer rate {answer_rate:.1f}%")
+    c4.metric("Final reply LT", _format_lead_time_for_table(result))
+
+    reply_analysis = result.get('_raw_reply_analysis') or {}
+    col1, col2 = st.columns(2, gap="medium")
+    for col, key, label in ((col1, 'first_reply', 'First reply'), (col2, 'final_reply', 'Final reply')):
+        with col:
+            reply = reply_analysis.get(key)
+            st.markdown(f"**{label}**")
+            if reply:
+                st.markdown(f'<div class="lca-quote">{esc(reply.get("message", ""))}</div>', unsafe_allow_html=True)
+                if reply.get('lead_time_days'):
+                    lead = f"{reply.get('lead_time_days')} days"
+                else:
+                    lead = format_lead_time(reply.get('lead_time_minutes')) if reply.get('lead_time_minutes') is not None else 'N/A'
+                st.caption(f"Time: {reply.get('timestamp', 'N/A')} · Lead time: {lead}"
+                           f"{' · ' + str(reply.get('note')) if reply.get('note') else ''}")
+            else:
+                st.caption("Not found")
+
+    if result.get('_raw_qa_pairs'):
+        with st.expander(f"Conversation Q&A pairs ({len(result['_raw_qa_pairs'])})"):
+            qa = pd.DataFrame([{
+                'Pair': i + 1,
+                'Question': pair.get('question', ''),
+                'Question Time': str(pair.get('question_time', 'N/A')),
+                'Answered': bool(pair.get('is_answered')),
+                'Answer': truncate(pair.get('answer') or 'No answer', 200),
+                'Answer Time': str(pair.get('answer_time', 'N/A')),
+                'Lead Time (min)': pair.get('lead_time_minutes'),
+            } for i, pair in enumerate(result['_raw_qa_pairs'])])
+            st.dataframe(qa, use_container_width=True, hide_index=True)
+
+    main_issue = reply_analysis.get('main_issue') or {}
+    with st.expander("How this ticket was classified"):
+        st.markdown(
+            f"- Main issue detection score: {esc(main_issue.get('detection_score', result.get('main_issue_detection_score', 'N/A')))}\n"
+            f"- Detection reason: {esc(main_issue.get('detection_reason', result.get('main_issue_detection_reason', 'N/A')))}\n"
+            f"- Requirement compliant: {reply_analysis.get('requirement_compliant', 'N/A')}\n"
+            f"- Question time: {esc(main_issue.get('question_time', result.get('main_question_time', 'N/A')))}\n"
+            f"- Analyzed at: {esc(result.get('analysis_timestamp', 'N/A'))}")
+        if st.checkbox("Show raw analysis data", key=f"raw_{result['ticket_id']}"):
+            st.json(reply_analysis, expanded=False)
+
+
+# ------------------------------------------------------------ data quality
+def _missing_required_replies(successful):
+    missing = []
+    for r in successful:
+        issue_type = r['final_issue_type']
+        if issue_type in ['serious', 'complaint'] and not r['first_reply_found']:
+            missing.append(r['ticket_id'])
+        elif issue_type == 'normal' and not r['final_reply_found'] and not r.get('customer_leave'):
+            missing.append(r['ticket_id'])
+    return missing
+
+
+def display_data_quality_tab(results, stats):
     successful = [r for r in results if r['status'] == 'success']
     failed = [r for r in results if r['status'] == 'failed']
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("### 📊 Analysis Status")
-        st.metric("Successful Analyses", len(successful))
-        st.metric("Failed Analyses", len(failed))
-        st.metric("Success Rate", f"{(len(successful)/len(results))*100:.1f}%" if results else "0%")
-    
-    with col2:
-        st.markdown("### ⚠️ Common Inquiries")
-        
-        # Check for negative lead times
-        negative_lead_times = []
-        for result in successful:
-            first_lt = result.get('first_reply_lead_time_minutes')
-            final_lt = result.get('final_reply_lead_time_minutes')
-            
-            if (first_lt is not None and first_lt < 0) or (final_lt is not None and final_lt < 0):
-                negative_lead_times.append(result['ticket_id'])
-        
-        if negative_lead_times:
-            st.error(f"❌ {len(negative_lead_times)} tickets with negative lead times")
-        else:
-            st.success("✅ No negative lead times detected")
-        
-        # Check for missing required replies
-        missing_required = []
-        for result in successful:
-            issue_type = result['final_issue_type']
-            if issue_type in ['serious', 'complaint'] and not result['first_reply_found']:
-                missing_required.append(result['ticket_id'])
-            elif issue_type == 'normal' and not result['final_reply_found'] and not result.get('customer_leave'):
-                missing_required.append(result['ticket_id'])
-        
-        if missing_required:
-            st.warning(f"⚠️ {len(missing_required)} tickets missing required replies")
-        else:
-            st.success("✅ All required replies present")
-    
-    # Show failed analyses
+
+    c1, c2, c3 = st.container(key="kpis_quality").columns(3)
+    c1.metric("Analyzed", len(successful))
+    c2.metric("Could not be analyzed", len(failed))
+    c3.metric("Analysis success rate", f"{(len(successful) / len(results)) * 100:.1f}%" if results else "0%")
+
+    negative = [r['ticket_id'] for r in successful
+                if any(isinstance(v, (int, float)) and v < 0 for v in
+                       (r.get('first_reply_lead_time_minutes'), r.get('final_reply_lead_time_minutes')))]
+    missing = _missing_required_replies(successful)
+    checks = pd.DataFrame([
+        {'Check': 'Negative lead times', 'Tickets': len(negative),
+         'Examples': ', '.join(map(str, negative[:5])) or '-'},
+        {'Check': 'Missing required reply', 'Tickets': len(missing),
+         'Examples': ', '.join(map(str, missing[:5])) or '-'},
+    ])
+    st.markdown("#### Checks")
+    st.dataframe(checks, use_container_width=True, hide_index=True)
+
+    st.markdown("#### Tickets that could not be analyzed")
     if failed:
-        st.markdown("### ❌ Failed Analyses")
-        for result in failed[:5]:
-            with st.expander(f"Failed: {result['ticket_id']}"):
-                st.write(f"Reason: {result['failure_reason']}")
-    
-    # Raw data inspection
-    st.markdown("### 🔍 Raw Data Inspection")
-    if successful:
-        sample_ticket = successful[0]
-        with st.expander("Sample Ticket Data Structure"):
-            st.json({k: v for k, v in sample_ticket.items() if not k.startswith('_raw')})
-    
-    # System information
-    st.markdown("### 🔧 System Information")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Python Version", sys.version.split()[0])
-    with col2:
-        st.metric("Pandas Version", pd.__version__)
-    with col3:
-        st.metric("Analysis Time", f"{stats.get('analysis_timestamp', 0):.1f}s" if stats else "N/A")
-        
-# Main execution
-if __name__ == "__main__":
+        reasons = {}
+        for r in failed:
+            reasons.setdefault(r.get('failure_reason') or 'Unknown', []).append(str(r['ticket_id']))
+        summary = pd.DataFrame([{'Reason': k, 'Tickets': len(v),
+                                 'Share': f"{len(v) / len(failed) * 100:.1f}%",
+                                 'Examples': ', '.join(v[:3]) + ('…' if len(v) > 3 else '')}
+                                for k, v in sorted(reasons.items(), key=lambda kv: -len(kv[1]))])
+        st.dataframe(summary, use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame([{'Ticket': str(r['ticket_id']), 'Reason': r.get('failure_reason', 'Unknown')}
+                                   for r in failed]), use_container_width=True, hide_index=True)
+    else:
+        st.success("Every ticket in scope was analyzed.", icon=":material/check_circle:")
+
+    with st.expander("Technical details"):
+        if successful:
+            st.json({k: str(v) for k, v in successful[0].items() if not k.startswith('_raw')}, expanded=False)
+        st.caption(f"Python {sys.version.split()[0]} · pandas {pd.__version__} · Streamlit {st.__version__}")
+
+
+# ============================================================ entry point
+def main():
+    auth.init_db()
+    token = st.query_params.get("reset_token")
+    if token:
+        render_reset(token)
+        return
+
+    user = _current_user()
+    if not user:
+        if st.session_state.get("auth_view") == "forgot":
+            render_forgot()
+        else:
+            render_login()
+        return
+
+    render_topbar(user)
     if not ANALYSIS_AVAILABLE:
-        st.error("""
-        ❌ Analysis modules not available!
-        
-        Please ensure:
-        1. File `chat_analyzer.py` exists in the same directory
-        2. All dependencies are installed
-        """)
+        st.error(f"The analysis module could not be loaded: {ANALYSIS_IMPORT_ERROR}. "
+                 "Check that Chat_Analyzer_System.py is present and dependencies are installed.")
         st.stop()
-    
-    # Check if analysis is complete
     if st.session_state.get('analysis_complete', False):
         display_enhanced_results()
     else:
         main_interface()
 
 
-
+if __name__ == "__main__":
+    main()
